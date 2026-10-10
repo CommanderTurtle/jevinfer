@@ -1,5 +1,14 @@
 import {test,expect} from 'bun:test';
 import {ChatReplay,parseChat,schedule,makeQuestions,presets,sampleChat} from '../src/chat-engine.js';
+import {longTestChat,longTestMessages} from '../src/chat-fixtures.js';
+
+test('Long-test prefill is editable text with the full original corpus',()=>{
+  const text=longTestChat(),messages=parseChat(text);
+  expect(longTestMessages.length).toBe(64);expect(messages.length).toBe(1344);
+  expect(new Set(messages.map(m=>m.user)).size).toBe(1344);
+  expect(messages.map(m=>m.text)).toEqual(Array.from({length:1344},(_,i)=>longTestMessages[i%64]));
+  expect(parseChat(text.replace('How did you record this video?','My edited question?'))[0].text).toBe('My edited question?');
+});
 
 const flush=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
 function rig(count=8,workers=2){let clock=0;const pending=new Map(),released=[],arrived=[];const messages=parseChat(Array.from({length:count},(_,i)=>`u${i}: hello`).join('\n'));const run=new ChatReplay({messages,times:schedule(messages,{rate:10}),workers,now:()=>clock,infer:message=>new Promise((resolve,reject)=>pending.set(message.id,{resolve,reject})),onArrival:r=>arrived.push(r.index),onRelease:r=>released.push(r.index)});return {run,pending,released,arrived,time:t=>clock=t};}

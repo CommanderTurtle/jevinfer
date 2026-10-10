@@ -1,5 +1,6 @@
 import {$,el,download} from './core.js';
 import {ChatReplay,parseChat,schedule,presets,makeQuestions,sampleChat} from './chat-engine.js';
+import {longTestChat} from './chat-fixtures.js';
 
 export function initChat(client,toast) {
   let replay=null,setup=null,visible=false,frame=0,lastDraw=0,kept=0,held=0,totalRtt=0,totalBuffer=0,rttCount=0,releaseCount=0,latestError='';
@@ -83,6 +84,7 @@ export function initChat(client,toast) {
   $('#chat-preset').onchange=preset;
   $('#chat-show-held').onchange=renderHistory;
   $('#chat-sample').onclick=()=>{source.value=sampleChat();$('#chat-format').value='plain';$('#chat-timing').value='bursts';$('#chat-source-note').textContent='288 synthetic messages, based on the six-category test fixture. Repeated text is still inferred individually.';};
+  $('#chat-long-test').onclick=()=>{source.value=longTestChat();$('#chat-format').value='plain';const switched=$('#chat-timing').value==='timestamps';if(switched)$('#chat-timing').value='bursts';$('#chat-source-note').textContent='1,344 synthetic messages: the original 64-message test corpus repeated 21 times. Edit freely below before Start. Your inference policy is unchanged.'+(switched?' Using burst timing because this fixture has no timestamps.':' Timing settings are unchanged.');source.focus();};
   $('#chat-file').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;try{if(file.size>16*1024*1024)throw Error('Chat files must be 16 MiB or smaller.');source.value=await file.text();$('#chat-source-note').textContent=`Loaded ${file.name}. Nothing sent until Start.`;}catch(error){toast(error.message);}};
   $('#chat-export').onclick=()=>{
     if(!replay||!setup)return;
