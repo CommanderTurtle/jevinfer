@@ -2,7 +2,7 @@ import {test,expect} from 'bun:test';
 import {manualInput} from '../src/manual-controls.js';
 import {modeQuestions,decodeControls,vehicleStep,recoverySteering,motionValues,wheelEffects} from '../src/vehicle-controls.js';
 import {createCourse,stepCourse,courseState} from '../src/race-course.js';
-import {createBoat,stepBoat,boatState,decodeBoat,fireBroadside} from '../src/boat-physics.js';
+import {createBoat,stepBoat,boatState,decodeBoat,fireBroadside,boardingSeconds} from '../src/boat-physics.js';
 import {validQuestions} from '../src/core.js';
 import {batchBoxes} from '../src/render-batch.js';
 import * as THREE from '../vendor/three.js';
@@ -51,7 +51,7 @@ test('Boat has independent cannon banks and moving boarding, not an instant cont
  w.balls=[];const p={id:0,x:w.x+8,z:w.z,heading:w.heading,speed:8,hull:3};w.police=[p];
  stepBoat(w,.05,{sail:.5});expect(w.finished).toBe(false);expect(w.boarding).toBeGreaterThan(0);
  for(let i=0;i<400&&!w.finished;i++){p.x=w.x+8;p.z=w.z;p.speed=w.speed;p.heading=w.heading;stepBoat(w,.01,{sail:.5});}
- expect(w.endReason).toBe('BOARDED');expect(w.time).toBeGreaterThan(8);
+ expect(w.endReason).toBe('BOARDED');expect(w.time).toBeGreaterThanOrEqual(5+boardingSeconds);
  const safe=createBoat();safe.time=5;safe.police[0].boarding=2;safe.police[0].x=100;stepBoat(safe,.1);expect(safe.police[0].boarding).toBeLessThan(2);
 });
 test('Police close distance and destruction records an actual sinking time',()=>{
@@ -65,7 +65,7 @@ test('Police close distance and destruction records an actual sinking time',()=>
 });
 test('A last-moment cannon hit interrupts boarding in the same physics step',()=>{
  const w=createBoat();w.time=5;w.waves=[];w.speed=8;
- const p={id:0,x:8,z:0,heading:0,speed:8,hull:1,boarding:2.999};w.police=[p];
+ const p={id:0,x:8,z:0,heading:0,speed:8,hull:1,boarding:boardingSeconds-.001};w.police=[p];
  w.balls=[{x:8,z:0,y:2,vx:0,vz:0,vy:0,age:0}];stepBoat(w,1/120,{sail:.5});
  expect(w.disabled).toBe(1);expect(w.boarding).toBe(0);expect(w.finished).toBe(false);
 });
