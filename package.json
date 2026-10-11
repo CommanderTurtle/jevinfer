@@ -9,6 +9,7 @@
     "dev": "bun scripts/serve.js",
     "test": "bun test",
     "test:live": "bun tests/live-modes.js",
+    "test:drive": "bun tests/live-driving.js",
     "vendor": "bun build ./node_modules/three/build/three.module.js --target browser --minify --outfile ./vendor/three.js"
   },
   "dependencies": {

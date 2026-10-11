@@ -22,7 +22,10 @@ input[type=checkbox]{accent-color:#81a3ff}label,.badge{color:var(--muted)}.quest
 .play-grid{gap:22px}.results-heading{margin-top:0;margin-bottom:14px}
 .lab-grid{grid-template-columns:minmax(0,1fr) 310px;gap:20px;align-items:start}.lab-controls{gap:12px}.lab-controls>h2{margin-bottom:12px}
 .race-stage{height:min(72vh,740px);min-height:440px;border-radius:9px;overflow:hidden;position:relative;background:#0a101a}
-.race-stage canvas{width:100%;height:100%;display:block}.race-stage.collision::after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 100px #ff404099;pointer-events:none}
+.race-stage #race-canvas{width:100%;height:100%;display:block;image-rendering:auto}.race-stage.collision::after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 100px #ff404099;pointer-events:none}
+.race-stage #race-map{position:absolute;width:128px;height:128px;right:16px;bottom:48px;border:1px solid #8093ad55;border-radius:8px;pointer-events:none;image-rendering:auto}
+.drive-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.drive-pad button{touch-action:none;user-select:none;padding:8px;font:16px var(--mono)}.drive-check{flex-direction:row;align-items:center;gap:8px}.drive-check input{width:auto;accent-color:var(--violet)}#race-sensor-panel{font-size:11px}#race-sensor-panel pre{max-height:240px}#drive .lab-controls{gap:12px}#drive .race-stage{position:sticky;top:96px}#drive .stat-line{padding:7px 0}#drive .race-hud{color:#e5edff;text-shadow:0 1px 6px #000}#drive .race-hud span:first-child b{color:#aad0ff}
+@media(max-width:760px){#drive .race-stage{position:relative;top:auto}.race-stage #race-map{width:92px;height:92px}}
 .race-hud,.race-bottom{pointer-events:none}.race-hud{font-family:var(--mono);font-size:11px}
 .paint-stage{background:#12161d;border:1px solid var(--line);border-radius:9px;min-height:580px;padding:24px;position:sticky;top:82px}
 .canvas-mat{width:min(650px,100%);box-shadow:0 12px 40px #0004;background:#171a20;padding:0;overflow:hidden;border-radius:3px}
