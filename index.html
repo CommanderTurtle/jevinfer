@@ -28,10 +28,10 @@
     <div class="green-vignette" aria-hidden="true"></div><div class="green-grain" aria-hidden="true"></div>
     <div class="green-hud"><span><i></i> GREEN LIGHT</span><span id="green-status">READY</span></div>
     <div class="green-reticle" aria-hidden="true">·</div>
-    <div class="green-controls"><div class="green-pad" aria-label="Walking controls"><button data-green-key="KeyW" aria-label="Walk forward" aria-pressed="false">W</button><button data-green-key="KeyA" aria-label="Walk left" aria-pressed="false">A</button><button data-green-key="KeyS" aria-label="Walk backward" aria-pressed="false">S</button><button data-green-key="KeyD" aria-label="Walk right" aria-pressed="false">D</button></div><span>WASD walk · mouse / drag look · Esc pause</span></div>
+    <div class="green-controls"><div class="green-pad" aria-label="Walking controls"><button data-green-key="KeyW" aria-label="Walk forward" aria-pressed="false">W</button><button data-green-key="KeyA" aria-label="Walk left" aria-pressed="false">A</button><button data-green-key="KeyS" aria-label="Walk backward" aria-pressed="false">S</button><button data-green-key="KeyD" aria-label="Walk right" aria-pressed="false">D</button><button id="green-sprint" data-green-key="ShiftLeft" aria-label="Sprint" aria-pressed="false" disabled>Shift</button></div><span><span id="green-model-action">Jev · Awaiting motion</span><br>WASD walk · Shift sprint · mouse / drag look · Esc pause</span></div>
     <div id="green-overlay" class="green-overlay" role="status" aria-live="polite" hidden><div class="green-smoke" aria-hidden="true"></div><button id="green-exit-intro" class="green-skip">Skip / pause</button><div class="green-story"><h2 id="green-story-title"></h2><p id="green-story-line"></p><button id="green-action" hidden>Enter yard</button></div></div>
   </div>
-  <div class="green-footer"><span id="green-network">0 decisions · —</span><label><input id="green-flashes" type="checkbox">Reduced flashes</label><details><summary>Model state</summary><pre id="green-inspection"></pre></details></div>
+  <div class="green-footer"><span id="green-network">0 decisions · —</span><label><input id="green-flashes" type="checkbox">Reduced flashes</label><details><summary>Model state</summary><span id="green-mechanics"></span><pre id="green-inspection"></pre></details></div>
 </section>
 <section id="paint" class="pane">
   <div class="compact-title"><h1>Paint</h1><span id="paint-status" class="badge">Ready</span></div>

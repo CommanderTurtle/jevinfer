@@ -2,6 +2,7 @@ import {clamp} from './core.js';
 
 // Fictional game units and mechanics, shared by the scene and model observations.
 export const sweepSeconds=22;
+export const sprintMultiplier=1.35;
 export const yard={minX:-13.4,maxX:13.4,minZ:-18.6,maxZ:65.5,startZ:64,doorX:6,doorZ:-18.5};
 export const cameraRange=100;
 export const cameraMount={x:0,y:7.6,z:-19};
@@ -23,7 +24,7 @@ const pitchTurns={DOWN_LARGE:-12,DOWN:-4,DOWN_FINE:-1,HOLD:0,UP_FINE:1,UP:4,UP_L
 
 export function createGreenWorld(){
  return {time:0,player:{x:1.5,z:yard.startZ,y:1.65,yaw:0,pitch:0,vx:0,vz:0,moving:false},cameraYaw:.1,cameraTurns:0,
-  sweepPeriod:sweepSeconds,sweepTarget:sweepSeconds,cameraPeriod:sweepSeconds,variableSweep:false,nextSweepChange:Infinity,
+  sweepPeriod:6.5,sweepTarget:6.5,cameraPeriod:6.5,variableSweep:false,nextSweepChange:Infinity,
   turret:{lift:0,raised:false,yaw:Math.PI,pitch:-.12,yawGoal:Math.PI,pitchGoal:-.12,turning:false,lastUse:0,lastUseTurn:0,cooldown:0,yawRate:0,pitchRate:0,until:0},
   observation:null,track:0,inView:false,projectiles:[],tracers:[],events:[],steps:0,shotCount:0,shotResult:'none',result:null};
 }
@@ -93,7 +94,8 @@ export function greenContract(w){
 export function applyGreenDecision(w,answers,track,sentAt){
  if(w.result||!w.observation||track!==w.track||w.time-sentAt>1)return false;
  const t=w.turret;
- if(answers.mount?.choice==='RAISE'){t.raised=true;t.lastUse=w.time;t.lastUseTurn=w.cameraTurns;t.until=w.time+.55;}
+ if(answers.mount?.choice==='RAISE'){t.raised=true;t.lastUse=w.time;t.lastUseTurn=w.cameraTurns;t.until=w.time+2.8;}
+ if(answers.mount?.choice==='WAIT')t.until=w.time;
  if(t.lift>=1){
   const yaw=yawTurns[answers.yaw?.choice]||0,pitch=pitchTurns[answers.pitch?.choice]||0;
   t.yawGoal=wrap(t.yaw+yaw*Math.PI/180);t.pitchGoal=clamp(t.pitch+pitch*Math.PI/180,-1.4,.25);t.until=w.time+1.2;t.turning=!!(yaw||pitch);
@@ -111,7 +113,8 @@ export function applyGreenDecision(w,answers,track,sentAt){
 export function stepGreenWorld(w,dt,input){
  if(w.result)return;
  const p=w.player,oldX=p.x,oldZ=p.z,wasSprinting=p.sprinting;
- const length=Math.hypot(input.forward||0,input.side||0)||1,sprint=w.variableSweep&&input.sprint?1.35:1,speed=.95*sprint;
+ p.yaw+=(input.turn||0)*dt*.9;
+ const length=Math.hypot(input.forward||0,input.side||0)||1,sprint=w.variableSweep&&input.sprint?sprintMultiplier:1,speed=.95*sprint;
  const dx=((input.forward||0)*Math.sin(p.yaw)+(input.side||0)*Math.cos(p.yaw))/length*speed*dt;
  const dz=(-(input.forward||0)*Math.cos(p.yaw)+(input.side||0)*Math.sin(p.yaw))/length*speed*dt;
  if(walkable(p.x+dx,p.z))p.x+=dx;if(walkable(p.x,p.z+dz))p.z+=dz;
@@ -121,11 +124,11 @@ export function stepGreenWorld(w,dt,input){
  if(!w.variableSweep&&(progress>=.5||w.time>=45)){w.variableSweep=true;w.nextSweepChange=w.time;}
  if(p.sprinting&&!wasSprinting)w.nextSweepChange=w.time;
  // Independent speed and timing draws prevent a predictable slow/fast rhythm.
- if(w.time>=w.nextSweepChange){w.sweepTarget=Math.random()<.25?9+Math.random()*7:18+Math.sqrt(Math.random())*8;w.nextSweepChange=w.time+(p.sprinting?.9+Math.random()*1.3:2+Math.random()*2);}
+ if(w.time>=w.nextSweepChange){w.sweepTarget=Math.random()<.25?2.2+Math.random()*1.8:4+Math.sqrt(Math.random())*4;w.nextSweepChange=w.time+(p.sprinting?.9+Math.random()*1.3:2+Math.random()*2);}
  w.sweepPeriod+=(w.sweepTarget-w.sweepPeriod)*(1-Math.exp(-dt/.35));
  // Linger over the yard, not over a tracked person. Stationary players stay invisible.
- const facing=clamp((-Math.cos(w.cameraYaw)+.12)/.24,0,1),linger=facing*facing*(3-2*facing);
- w.cameraPeriod=w.sweepPeriod+(w.variableSweep?(28-w.sweepPeriod)*linger:0);
+ const facing=clamp((-Math.cos(w.cameraYaw)+.22)/.28,0,1),linger=facing*facing*(3-2*facing);
+ w.cameraPeriod=w.sweepPeriod+((w.variableSweep?28:sweepSeconds)-w.sweepPeriod)*linger;
  const turn=dt/w.cameraPeriod;w.cameraTurns+=turn;w.cameraYaw=wrap(w.cameraYaw+turn*2*Math.PI);observe(w);
  if(p.moving){w.steps+=dt;if(w.steps>.72/sprint){w.steps=0;w.events.push('step');}}
  const t=w.turret,previousLift=t.lift;
@@ -151,4 +154,11 @@ export function stepGreenWorld(w,dt,input){
  }
  w.projectiles=w.projectiles.filter(b=>b.age<.8);w.tracers=w.tracers.filter(b=>b.until>w.time).slice(-16);
  if(!w.result&&Math.hypot(p.x-yard.doorX,p.z-yard.doorZ)<1.2){w.result='escaped';w.events.push('door');}
+}
+
+// Preserve real-time movement/difficulty on slower renderers. Small physics steps
+// retain swept collision and input gating; a long suspended frame is not replayed.
+export function advanceGreenWorld(w,elapsed,input){
+ let remaining=Math.min(.5,Math.max(0,elapsed));
+ while(remaining>1e-8&&!w.result){const dt=Math.min(1/120,remaining);stepGreenWorld(w,dt,input);remaining-=dt;}
 }

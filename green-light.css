@@ -19,6 +19,7 @@
 @keyframes green-story{0%,8%,100%{opacity:0;filter:blur(3px)}40%,65%{opacity:1;filter:blur(0)}95%{opacity:0;filter:blur(0)}}
 @keyframes green-arrival{from{opacity:1}to{opacity:0}}
 @keyframes green-whisper{0%,100%{opacity:0}18%,72%{opacity:1}}
+#green-sprint{grid-column:1/4}#green-sprint:disabled{opacity:.3}#green-model-action{display:inline-block;margin-bottom:8px;color:#b6cbb0}
 @keyframes green-death{0%,25%{opacity:0;filter:blur(6px)}100%{opacity:1;filter:blur(0)}}
 @media(max-width:760px){.green-heading{flex-wrap:wrap}.green-stage{min-height:440px;height:72svh}.green-controls{left:14px;right:14px}.green-controls>span{max-width:170px;line-height:1.7}.green-pad{grid-template-columns:repeat(3,40px)}.green-pad button{padding:11px 0}.green-hud{left:17px;right:17px}.green-footer{gap:12px}}
 @media(prefers-reduced-motion:reduce){.green-smoke,.cinematic .green-smoke::before,.cinematic .green-smoke::after,.story-change .green-story h2,.story-change .green-story p,.green-overlay.ending .green-story{animation:none}.green-stage.arriving::after{display:none}}

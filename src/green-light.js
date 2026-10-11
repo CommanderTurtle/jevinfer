@@ -1,5 +1,5 @@
 import {$,Run} from './core.js';
-import {createGreenWorld,greenContract,applyGreenDecision,stepGreenWorld} from './green-light-world.js';
+import {createGreenWorld,greenContract,applyGreenDecision,advanceGreenWorld} from './green-light-world.js';
 import {createGreenScene} from './green-light-scene.js';
 import {createGreenAudio} from './green-light-audio.js';
 
@@ -10,6 +10,7 @@ export function initGreenLight(client,toast){
  let world=createGreenWorld(),view=null,visible=false,phase='new',resumePhase='playing',run=null,flight=null;
  let raf=0,lastFrame=0,weather=0,storyTime=0,storyIndex=-1,nextRequest=0,failures=0,decisions=0,lastHud=0,whisperUntil=0;
  let bolt=-10,nextBolt=3.5,thunderAt=Infinity,drag=null,wasLocked=false,lastMotor=false,lastReply='—',shiftHeld=false;
+ let lastAction='Awaiting motion',lastSoundError='';
  const story=[['Green Light',''],['','The neighbor installed a motion camera.'],['','Break in.'],['','Be careful.']];
  const storyBeat=3.8;
  $('#green-flashes').checked=matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -35,7 +36,7 @@ export function initGreenLight(client,toast){
   stage.classList.toggle('arriving',arriving);
   run=new Run();nextRequest=weather;failures=0;lastReply='—';canvas.focus({preventScroll:true});void sound.resume();
  }
- function retry(){abort();world=createGreenWorld();decisions=0;whisperUntil=0;whisper.hidden=true;$('#green-inspection').textContent='';begin();}
+ function retry(){abort();world=createGreenWorld();decisions=0;whisperUntil=0;whisper.hidden=true;lastAction='Awaiting motion';lastMotor=false;$('#green-inspection').textContent='';begin();}
  function intro(){
   phase='intro';storyTime=0;storyIndex=-1;stage.classList.remove('arriving','ready');stage.classList.add('cinematic');stage.style.setProperty('--story-duration',`${storyBeat}s`);screen('','','');$('#green-exit-intro').hidden=false;void sound.resume();
  }
@@ -43,13 +44,14 @@ export function initGreenLight(client,toast){
   if(phase!=='playing'||!run||run.signal.aborted||flight||world.turret.turning||weather<nextRequest)return;
   const contract=greenContract(world);if(!contract)return;
   const current=run,track=world.track,sentAt=world.time;
-  $('#green-inspection').textContent=JSON.stringify(contract.state,null,2);
+  if(!decisions)$('#green-inspection').textContent=JSON.stringify(contract.state,null,2);
   const pending={};flight=pending;
   client.infer(contract.state,contract.questions,current.signal).then(result=>{
    if(run!==current||current.signal.aborted)return;
    const accepted=applyGreenDecision(world,result.answers,track,sentAt);decisions++;failures=0;nextRequest=weather+.075;
    lastReply=`${Math.round(result.ms)} ms${accepted?'':' · expired'}`;
-   $('#green-inspection').textContent=JSON.stringify({state:contract.state,answers:result.answers,applied:accepted},null,2);
+   if(accepted)lastAction=Object.values(result.answers).map(a=>a.choice).filter(Boolean).join(' / ');
+   $('#green-inspection').textContent=JSON.stringify({state:contract.state,answers:result.answers,applied:accepted,last_applied_action:lastAction},null,2);
   }).catch(error=>{
    if(run!==current||current.signal.aborted)return;
    failures++;lastReply='Endpoint unavailable';nextRequest=weather+Math.min(8,2**failures);
@@ -59,7 +61,7 @@ export function initGreenLight(client,toast){
  }
  function frame(now){
   raf=0;if(!visible||document.hidden)return;
-  const elapsed=Math.max(0,(now-(lastFrame||now))/1000),dt=Math.min(.05,Math.max(.001,elapsed));lastFrame=now;
+  const elapsed=Math.max(0,(now-(lastFrame||now))/1000),dt=Math.min(.5,elapsed);lastFrame=now;
   if(phase==='intro'||phase==='playing'){
    weather+=dt;
    if(weather>=nextBolt){bolt=weather;nextBolt=weather+12+Math.random()*13;thunderAt=weather+.7+Math.random()*1.4;}
@@ -67,7 +69,7 @@ export function initGreenLight(client,toast){
   }
   if(phase==='intro'){
    // A deep link has no autoplay permission: don't run a silent intro past the user.
-   if(sound.supported&&!sound.active&&!sound.muted){action.hidden=false;action.textContent='Enable sound';}
+   if(sound.supported&&(!sound.active||!sound.ready)&&!sound.muted){action.hidden=false;action.textContent=sound.error?'Retry sound':sound.active?'Loading sound…':'Enable sound';}
    else{
     action.hidden=true;storyTime+=elapsed;const index=Math.min(story.length-1,Math.floor(storyTime/storyBeat));
     if(index!==storyIndex){storyIndex=index;title.textContent=story[index][0];line.textContent=story[index][1];overlay.classList.remove('story-change');void overlay.offsetWidth;overlay.classList.add('story-change');}
@@ -75,10 +77,9 @@ export function initGreenLight(client,toast){
    }
   }
   if(phase==='playing'){
-   world.player.yaw+=((keys.has('ArrowRight')?1:0)-(keys.has('ArrowLeft')?1:0))*dt*.9;
    const forward=(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),side=(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0);
    const wasVariable=world.variableSweep;
-   stepGreenWorld(world,dt,{forward,side,sprint:shiftHeld});
+   advanceGreenWorld(world,dt,{forward,side,sprint:shiftHeld||keys.has('ShiftLeft')||keys.has('ShiftRight'),turn:(keys.has('ArrowRight')?1:0)-(keys.has('ArrowLeft')?1:0)});
    if(!wasVariable&&world.variableSweep){whisperUntil=world.time+3.2;whisper.hidden=false;}
    for(const e of world.events)sound.play(e);world.events.length=0;
    const motor=Math.abs(world.motor||0)>.005;if(lastMotor!==motor)sound.play(motor?'piston':'piston-stop');lastMotor=motor;sound.update(world);
@@ -88,9 +89,13 @@ export function initGreenLight(client,toast){
   if(phase!=='playing'||world.time>=whisperUntil)whisper.hidden=true;
   if(phase==='playing')view?.render(world,weather,flash,$('#green-flashes').checked);
   if(now-lastHud>150){
-   lastHud=now;$('#green-status').textContent=phase==='playing'?(world.player.sprinting?'SPRINTING':world.player.moving?'MOVING':'STILL'):phase.toUpperCase();
+   lastHud=now;$('#green-status').textContent=phase==='playing'?(world.player.sprinting?'SPRINTING · 1.35×':world.player.moving?'MOVING':'STILL'):phase.toUpperCase();
+   $('#green-sprint').disabled=!world.variableSweep;$('#green-sprint').title=world.variableSweep?'Hold Shift to sprint at 1.35× speed':'Sprint unlocks at the difficulty change';
+   $('#green-model-action').textContent=`Jev · ${lastAction}`;
+   $('#green-mechanics').textContent=`${world.time.toFixed(1)}s · sweep ${(360/world.cameraPeriod).toFixed(0)}°/s · ${world.player.sprinting?'1.35':'1'}×`;
    $('#green-network').textContent=`${decisions} decisions · ${lastReply}`;
-   $('#green-sound').textContent=sound.active?(sound.muted?'Sound off':'Sound on'):'Enable sound';
+   $('#green-sound').textContent=sound.error?'Retry sound':sound.active?(sound.muted?'Sound off':sound.ready?'Sound on':'Loading sound…'):'Enable sound';
+   if(sound.error&&sound.error!==lastSoundError){lastSoundError=sound.error;toast(sound.error);}
   }
   raf=requestAnimationFrame(frame);
  }
@@ -99,6 +104,7 @@ export function initGreenLight(client,toast){
   visible=value;
   if(!value){pause();cancelAnimationFrame(raf);raf=0;clearInput();releasePointer();sound.suspend();return;}
   if(!view){try{view=createGreenScene(canvas);}catch(error){phase='error';screen('Renderer unavailable',error.message,'');toast('Green Light needs WebGL2.');return;}}
+  void sound.prepare();
   if(phase==='new'){phase='ready';stage.classList.add('cinematic','ready');screen('','','Start');$('#green-exit-intro').hidden=true;}
   loop();
  }

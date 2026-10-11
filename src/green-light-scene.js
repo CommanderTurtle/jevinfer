@@ -92,6 +92,7 @@ export function createGreenScene(canvas){
   const r=canvas.getBoundingClientRect();if(r.width<1||r.height<1)return;
   if(width!==r.width||height!==r.height){width=r.width;height=r.height;renderer.setSize(width,height,false);eye.aspect=width/height;eye.updateProjectionMatrix();}
   const p=w.player,bob=p.moving?Math.sin(w.time*8*(p.sprinting?1.35:1))*(p.sprinting?.03:.022):0;
+  const fov=66+(p.sprinting?3:0);if(eye.fov!==fov){eye.fov=fov;eye.updateProjectionMatrix();}
   eye.position.set(p.x,p.y+bob,p.z);look.set(p.x+Math.sin(p.yaw)*Math.cos(p.pitch),p.y+bob+Math.sin(p.pitch),p.z-Math.cos(p.yaw)*Math.cos(p.pitch));eye.lookAt(look);
   const o=turretOrigin(w);mount.position.set(o.x,o.y,o.z);mount.rotation.y=-w.turret.yaw;pivot.rotation.x=w.turret.pitch;
   piston.position.y=(3.25+o.y)/2;piston.scale.y=Math.max(.02,o.y-3.25);mount.visible=w.turret.lift>.2;
