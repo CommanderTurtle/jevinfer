@@ -4,5 +4,14 @@
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
-  "scripts": { "start": "bun scripts/serve.js", "dev": "bun scripts/serve.js", "test": "bun test" }
+  "scripts": {
+    "start": "bun scripts/serve.js",
+    "dev": "bun scripts/serve.js",
+    "test": "bun test",
+    "test:live": "bun tests/live-modes.js",
+    "vendor": "bun build ./node_modules/three/build/three.module.js --target browser --minify --outfile ./vendor/three.js"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  }
 }

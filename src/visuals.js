@@ -17,19 +17,19 @@ export function tornado(canvas,onFrame=()=>{}) {
     const level=.19+slot/Math.max(1,count-1)*.56,theta=time*.38+slot*2.399;
     const p=funnelPoint(level,theta,w,h,time,1.05,pointer);
     if((p.depth>.46)!==front)return;
-    const scale=.76+p.depth*.25,ambient=item.ambient;
+    const scale=.76+p.depth*.25;
     ctx.save();ctx.translate(p.x,p.y);ctx.rotate(Math.sin(theta)*.065);ctx.scale(scale,scale);
     ctx.globalAlpha=.48+p.depth*.52;ctx.fillStyle='#0b0713ee';ctx.strokeStyle=item.error?'#ef768aa0':'#c570a870';
     const width=Math.min(182,Math.max(116,w*.17)),left=-width/2;
     ctx.shadowBlur=front?12:0;ctx.shadowColor='#ed68bf44';
     ctx.beginPath();ctx.roundRect(left,-20,width,40,4);ctx.fill();ctx.stroke();ctx.shadowBlur=0;
     ctx.font='9px Consolas, monospace';ctx.fillStyle=item.error?'#ff9eb0':'#f8c7eb';
-    const headline=ambient?item.label:item.pending?'ROW '+String(item.id+1).padStart(4,'0')+' / IN FLIGHT':item.error?'ROW '+(item.id+1)+' / ERROR':item.choice;
+    const headline=item.pending?'ROW '+String(item.id+1).padStart(4,'0')+' / IN FLIGHT':item.error?'ROW '+(item.id+1)+' / ERROR':item.choice;
     ctx.fillText(headline.slice(0,26),left+8,-4);
     ctx.font='7px Consolas, monospace';ctx.fillStyle='#b58bac';
-    const detail=ambient?'AMBIENT / NO REQUEST':item.pending?item.label:item.error?'DETAILS IN JOURNAL':Math.round(item.ms)+' ms · '+(item.probability*100).toFixed(1)+'%';
+    const detail=item.pending?item.label:item.error?'DETAILS IN JOURNAL':Math.round(item.ms)+' ms · '+(item.probability*100).toFixed(1)+'%';
     ctx.fillText(detail.slice(0,33),left+8,10);
-    if(!ambient&&!item.pending&&!item.error){ctx.fillStyle='#e260af';ctx.fillRect(left+8,15,(width-16)*item.probability,1.5);}
+    if(!item.pending&&!item.error){ctx.fillStyle='#e260af';ctx.fillRect(left+8,15,(width-16)*item.probability,1.5);}
     ctx.restore();
   }
   function draw(now) {
@@ -44,7 +44,7 @@ export function tornado(canvas,onFrame=()=>{}) {
     ctx.strokeStyle='#76305524';ctx.lineWidth=.6;
     for(let ring=0;ring<7;ring++){ctx.beginPath();ctx.ellipse(cx,base,40+ring*wide*.24,8+ring*9,0,0,tau);ctx.stroke();}
     for(const p of dust){const x=(p.x*w+Math.sin(time*.09+p.a)*30+w)%w,y=(p.y*h-time*(4+p.s*10)+h*8)%h;ctx.fillStyle=p.s>.85?'#e7b8da75':'#a170ac30';ctx.fillRect(x,y,p.s>.85?1.4:.7,p.s>.85?1.4:.7);}
-    const actual=activity.cards(),cards=actual.length?actual:[{ambient:true,label:'READ → CLASSIFY'},{ambient:true,label:'FINITE DECISIONS'},{ambient:true,label:'SCORE → JOURNAL'}];
+    const cards=activity.cards();
     cards.forEach((c,i)=>card(c,i,cards.length,false));
     ctx.globalCompositeOperation='lighter';
     // Tangential strokes form dense, circling filaments rather than isolated dots.

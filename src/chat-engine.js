@@ -98,10 +98,10 @@ export function makeQuestions(instructions,criteria,extras={}) {
 // Independent arrivals; a bounded worker pool, not a bounded or lossy arrival queue.
 // Completed judgments are released in original order, including explicit error markers.
 export class ChatReplay {
-  constructor({messages,times,workers,infer,now=()=>performance.now(),onArrival=()=>{},onRelease=()=>{},onChange=()=>{}}) {
+  constructor({messages,times,workers,infer,now=()=>performance.now(),onArrival=()=>{},onRelease=()=>{},onChange=()=>{},ordered=true}) {
     if(!Number.isInteger(workers)||workers<1||workers>32)throw Error('Use 1–32 chat workers.');
     if(!messages.length||times.length!==messages.length||times.some((t,i)=>!Number.isFinite(t)||t<0||i>0&&t<times[i-1]))throw Error('Invalid replay schedule.');
-    Object.assign(this,{messages,times,workers,infer,now,onArrival,onRelease,onChange});
+    Object.assign(this,{messages,times,workers,infer,now,onArrival,onRelease,onChange,ordered});
     this.controller=new AbortController();this.origin=now();this.pauseTotal=0;this.pausedAt=null;
     this.arrived=0;this.dispatched=0;this.completed=0;this.released=0;this.active=0;this.errors=0;this.peakQueue=0;
     this.records=new Array(messages.length);this.stopped=false;this.finished=false;this.finishedAt=null;
@@ -132,8 +132,9 @@ export class ChatReplay {
     if(this.stopped)return;
     const record=this.records[index];Object.assign(record,outcome,{status:outcome.error?'error':'done',completedMs:this.elapsed()});
     record.totalMs=record.completedMs-record.scheduledMs;record.wallMs=this.now()-this.origin-record.arrivedWallMs;this.active--;this.completed++;if(outcome.error)this.errors++;
-    while(this.released<this.arrived&&['done','error'].includes(this.records[this.released]?.status)) {
-      const next=this.records[this.released++];next.releasedMs=this.elapsed();next.bufferMs=next.releasedMs-next.scheduledMs;next.bufferWallMs=this.now()-this.origin-next.arrivedWallMs;this.onRelease(next,this);
+    if(!this.ordered){record.releasedMs=this.elapsed();record.bufferMs=record.releasedMs-record.scheduledMs;record.bufferWallMs=this.now()-this.origin-record.arrivedWallMs;record.delivered=true;this.released++;this.onRelease(record,this);}
+    while(this.ordered&&this.released<this.arrived&&['done','error'].includes(this.records[this.released]?.status)) {
+      const next=this.records[this.released++];next.delivered=true;next.releasedMs=this.elapsed();next.bufferMs=next.releasedMs-next.scheduledMs;next.bufferWallMs=this.now()-this.origin-next.arrivedWallMs;this.onRelease(next,this);
     }
     if(this.completed===this.messages.length){this.finished=true;this.finishedAt=this.pausedAt??this.now();this.onChange(this);}
     else {this.onChange(this);this.tick();}
@@ -155,4 +156,16 @@ export function sampleChat() {
     'That waveform has more curves than my learning curve.', 'The purple labels are hard to read against the background.'
   ];
   return Array.from({length:12},(_,round)=>lines.map((line,i)=>`viewer_${String(round*lines.length+i+1).padStart(3,'0')}: ${line}`).join('\n')).join('\n');
+}
+
+
+export function barrageChat(count=1344) {
+ const noise=['Kappa','LUL','W','PogChamp','lol','hype','chat is flying','clean','EZ','KEKW','lets go','clip it','W stream','nice','first','hello chat','GG','OMEGALUL'];
+ const signal=['How are you normalizing the audio before the FFT?','Clamp the peak amplitude before the shader mapping.','Could you expose a sensitivity slider?','The beat detection flickers when the bass is quiet.'];
+ return Array.from({length:count},(_,i)=>'viewer_'+String(i+1).padStart(4,'0')+': '+(i%13===7?signal[Math.floor(i/13)%signal.length]:noise[i%noise.length])).join('\n');
+}
+export function filterRecord(record,keep,threshold=0) {
+ const a=record.result?.answers?.category;if(!a)return false;
+ const p=a.partial?a.selectedProbability:a.probabilities[a.choice];
+ return keep.includes(a.choice)&&p>=threshold;
 }
