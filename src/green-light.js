@@ -10,6 +10,7 @@ export function initGreenLight(client,toast){
  let raf=0,lastFrame=0,weather=0,storyTime=0,storyIndex=-1,nextRequest=0,failures=0,decisions=0,lastHud=0;
  let bolt=-10,nextBolt=8,thunderAt=Infinity,drag=null,wasLocked=false,lastMotor=false,lastReply='—';
  const story=[['Green Light',''],['','The neighbor installed a motion camera.'],['','Break in.'],['','Be careful.']];
+ const storyBeat=5.2;
  $('#green-flashes').checked=matchMedia('(prefers-reduced-motion: reduce)').matches;
  function clearInput(){keys.clear();for(const b of stage.querySelectorAll('[data-green-key]'))b.setAttribute('aria-pressed','false');}
  function releasePointer(){if(document.pointerLockElement===canvas)document.exitPointerLock();}
@@ -28,12 +29,14 @@ export function initGreenLight(client,toast){
   overlay.classList.add('ending');sound.update({...world,motor:0,observation:null});
  }
  function begin(){
+  const arriving=phase==='intro';
   phase='playing';stage.classList.remove('cinematic','ended');overlay.classList.remove('ending');overlay.hidden=true;clearInput();
+  stage.classList.toggle('arriving',arriving);
   run=new Run();nextRequest=weather;failures=0;lastReply='—';canvas.focus({preventScroll:true});void sound.resume();
  }
  function retry(){abort();world=createGreenWorld();decisions=0;$('#green-inspection').textContent='';begin();}
  function intro(){
-  phase='intro';storyTime=0;storyIndex=-1;stage.classList.add('cinematic');screen('','','');void sound.resume();
+  phase='intro';storyTime=0;storyIndex=-1;stage.classList.remove('arriving');stage.classList.add('cinematic');stage.style.setProperty('--story-duration',`${storyBeat}s`);screen('','','');void sound.resume();
  }
  function commandLoop(){
   if(phase!=='playing'||!run||run.signal.aborted||flight||world.turret.turning||weather<nextRequest)return;
@@ -55,17 +58,16 @@ export function initGreenLight(client,toast){
  }
  function frame(now){
   raf=0;if(!visible||document.hidden)return;
-  const dt=Math.min(.05,Math.max(.001,(now-(lastFrame||now))/1000));lastFrame=now;
+  const elapsed=Math.max(0,(now-(lastFrame||now))/1000),dt=Math.min(.05,Math.max(.001,elapsed));lastFrame=now;
   if(phase==='intro'||phase==='playing'){
    weather+=dt;
    if(weather>=nextBolt){bolt=weather;nextBolt=weather+12+Math.random()*13;thunderAt=weather+.7+Math.random()*1.4;}
    if(weather>=thunderAt){sound.play('thunder');thunderAt=Infinity;}
   }
   if(phase==='intro'){
-   storyTime+=dt;const index=Math.min(3,Math.floor(storyTime/3.2));
+   storyTime+=elapsed;const index=Math.min(story.length-1,Math.floor(storyTime/storyBeat));
    if(index!==storyIndex){storyIndex=index;title.textContent=story[index][0];line.textContent=story[index][1];overlay.classList.remove('story-change');void overlay.offsetWidth;overlay.classList.add('story-change');}
-   if(storyTime>10){action.hidden=false;action.textContent='Enter yard';}
-   if(storyTime>14)begin();
+   if(storyTime>=story.length*storyBeat)begin();
   }
   if(phase==='playing'){
    world.player.yaw+=((keys.has('ArrowRight')?1:0)-(keys.has('ArrowLeft')?1:0))*dt*.9;
