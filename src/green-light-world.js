@@ -1,14 +1,19 @@
 import {clamp} from './core.js';
 
 // Fictional game units and mechanics, shared by the scene and model observations.
-export const sweepSeconds=30;
+export const sweepSeconds=22;
+export const yard={minX:-13.4,maxX:13.4,minZ:-18.6,maxZ:65.5,startZ:64,doorX:6,doorZ:-18.5};
+export const cameraRange=100;
 export const cameraMount={x:0,y:7.6,z:-19};
 export const silo={x:-6,z:0,radius:2.6,height:3.8};
 export const cover=[
  {x:8,z:6,w:5,d:6,h:4.5,kind:'shed'},
  {x:-6,z:12,w:3.8,d:2,h:1.8,kind:'logs'},
  {x:4,z:-8,w:2.7,d:1.6,h:2,kind:'bins'},
- {x:-10,z:-11,w:2.5,d:3,h:2.6,kind:'tank'}
+ {x:-10,z:-11,w:2.5,d:3,h:2.6,kind:'tank'},
+ {x:-8,z:52,w:4,d:3,h:2.1,kind:'logs'},
+ {x:8,z:38,w:3.5,d:5,h:3.2,kind:'shed'},
+ {x:-5,z:28,w:3,d:2,h:1.8,kind:'bins'}
 ];
 const wrap=x=>Math.atan2(Math.sin(x),Math.cos(x));
 const degrees=x=>x*180/Math.PI;
@@ -17,8 +22,9 @@ const yawTurns={LEFT_LARGE:-45,LEFT:-15,LEFT_SMALL:-5,LEFT_FINE:-1,HOLD:0,RIGHT_
 const pitchTurns={DOWN_LARGE:-12,DOWN:-4,DOWN_FINE:-1,HOLD:0,UP_FINE:1,UP:4,UP_LARGE:12};
 
 export function createGreenWorld(){
- return {time:0,player:{x:1.5,z:21,y:1.65,yaw:0,pitch:0,vx:0,vz:0,moving:false},cameraYaw:.1,
-  turret:{lift:0,raised:false,yaw:Math.PI,pitch:-.12,yawGoal:Math.PI,pitchGoal:-.12,turning:false,lastUse:0,cooldown:0,yawRate:0,pitchRate:0,until:0},
+ return {time:0,player:{x:1.5,z:yard.startZ,y:1.65,yaw:0,pitch:0,vx:0,vz:0,moving:false},cameraYaw:.1,cameraTurns:0,
+  sweepPeriod:sweepSeconds,sweepTarget:sweepSeconds,cameraPeriod:sweepSeconds,variableSweep:false,nextSweepChange:Infinity,
+  turret:{lift:0,raised:false,yaw:Math.PI,pitch:-.12,yawGoal:Math.PI,pitchGoal:-.12,turning:false,lastUse:0,lastUseTurn:0,cooldown:0,yawRate:0,pitchRate:0,until:0},
   observation:null,track:0,inView:false,projectiles:[],tracers:[],events:[],steps:0,shotCount:0,shotResult:'none',result:null};
 }
 
@@ -48,14 +54,14 @@ export function obstruction(a,b){
  return first;
 }
 function walkable(x,z){
- if(x< -13.4||x>13.4||z< -18.6||z>22.5||Math.hypot(x-silo.x,z-silo.z)<silo.radius+.3)return false;
+ if(x<yard.minX||x>yard.maxX||z<yard.minZ||z>yard.maxZ||Math.hypot(x-silo.x,z-silo.z)<silo.radius+.3)return false;
  return !cover.some(o=>Math.abs(x-o.x)<o.w/2+.3&&Math.abs(z-o.z)<o.d/2+.3);
 }
 export function turretOrigin(w){return {x:silo.x,y:3.25+w.turret.lift*2,z:silo.z};}
 function observe(w){
  const p=w.player,dx=p.x-cameraMount.x,dz=p.z-cameraMount.z;
  const angle=wrap(Math.atan2(dx,-dz)-w.cameraYaw);
- w.inView=Math.abs(angle)<Math.PI*38/180&&Math.hypot(dx,dz)<55&&obstruction(cameraMount,p)===Infinity;
+ w.inView=Math.abs(angle)<Math.PI*38/180&&Math.hypot(dx,dz)<cameraRange&&obstruction(cameraMount,p)===Infinity;
  const detected=w.inView&&p.moving;
  if(!detected&&w.observation)w.track++;
  w.observation=detected?{x:p.x,y:1,z:p.z,vx:p.vx,vz:p.vz}:null;
@@ -65,8 +71,8 @@ export function greenContract(w){
  const o=w.observation,t=w.turret,origin=turretOrigin(w),dx=o.x-origin.x,dz=o.z-origin.z;
  const horizontal=Math.hypot(dx,dz),yaw=Math.atan2(dx,-dz),pitch=Math.atan2(o.y-origin.y,horizontal);
  const state={game:'Green Light / fictional stealth minigame',motion_visible:true,
-  camera:{sweep_seconds:sweepSeconds,view_remaining_seconds:round((Math.PI*38/180+wrap(Math.atan2(o.x-cameraMount.x,-(o.z-cameraMount.z))-w.cameraYaw))/(2*Math.PI/sweepSeconds))},
-  mount:{raised_percent:round(t.lift*100),fully_raised:t.lift>=1,unused_retraction_seconds:round(Math.max(0,sweepSeconds*2-(w.time-t.lastUse)))},
+  camera:{sweep_seconds:round(w.cameraPeriod),variable_speed:w.variableSweep,view_remaining_seconds:round((Math.PI*38/180+wrap(Math.atan2(o.x-cameraMount.x,-(o.z-cameraMount.z))-w.cameraYaw))/(2*Math.PI/w.cameraPeriod))},
+  mount:{raised_percent:round(t.lift*100),fully_raised:t.lift>=1,unused_retraction_seconds:round(Math.max(0,2-(w.cameraTurns-t.lastUseTurn))*w.cameraPeriod)},
   target:{bearing_deg:round(degrees(yaw)),elevation_deg:round(degrees(pitch)),bearing_error_deg:round(degrees(wrap(yaw-t.yaw))),elevation_error_deg:round(degrees(pitch-t.pitch)),distance:round(horizontal),
    lateral_velocity:round(o.vx*Math.cos(yaw)+o.vz*Math.sin(yaw)),clear_line:obstruction(origin,o)===Infinity},
   weapon:{reload_seconds:round(t.cooldown),yaw_deg:round(degrees(t.yaw)),pitch_deg:round(degrees(t.pitch)),yaw_speed_deg_per_second:42,pitch_speed_deg_per_second:20,last_shot:w.shotResult},
@@ -87,16 +93,16 @@ export function greenContract(w){
 export function applyGreenDecision(w,answers,track,sentAt){
  if(w.result||!w.observation||track!==w.track||w.time-sentAt>1)return false;
  const t=w.turret;
- if(answers.mount?.choice==='RAISE'){t.raised=true;t.lastUse=w.time;t.until=w.time+.55;}
+ if(answers.mount?.choice==='RAISE'){t.raised=true;t.lastUse=w.time;t.lastUseTurn=w.cameraTurns;t.until=w.time+.55;}
  if(t.lift>=1){
   const yaw=yawTurns[answers.yaw?.choice]||0,pitch=pitchTurns[answers.pitch?.choice]||0;
   t.yawGoal=wrap(t.yaw+yaw*Math.PI/180);t.pitchGoal=clamp(t.pitch+pitch*Math.PI/180,-1.4,.25);t.until=w.time+1.2;t.turning=!!(yaw||pitch);
-  if(t.turning)t.lastUse=w.time;
+  if(t.turning){t.lastUse=w.time;t.lastUseTurn=w.cameraTurns;}
   if(answers.action?.choice==='SHOOT'&&t.cooldown<=0){
    // Use the barrel's current orientation, never the target's coordinates.
    const a=turretOrigin(w),dir={x:Math.sin(t.yaw)*Math.cos(t.pitch),y:Math.sin(t.pitch),z:-Math.cos(t.yaw)*Math.cos(t.pitch)};
    w.projectiles.push({...a,vx:dir.x*240,vy:dir.y*240,vz:dir.z*240,age:0});
-   t.cooldown=2.8;t.lastUse=w.time;w.shotCount++;w.shotResult='in flight';w.events.push('shot');
+   t.cooldown=2.8;t.lastUse=w.time;t.lastUseTurn=w.cameraTurns;w.shotCount++;w.shotResult='in flight';w.events.push('shot');
   }
  }
  return true;
@@ -104,19 +110,30 @@ export function applyGreenDecision(w,answers,track,sentAt){
 
 export function stepGreenWorld(w,dt,input){
  if(w.result)return;
- const p=w.player,oldX=p.x,oldZ=p.z;
- const length=Math.hypot(input.forward||0,input.side||0)||1,speed=.95;
+ const p=w.player,oldX=p.x,oldZ=p.z,wasSprinting=p.sprinting;
+ const length=Math.hypot(input.forward||0,input.side||0)||1,sprint=w.variableSweep&&input.sprint?1.35:1,speed=.95*sprint;
  const dx=((input.forward||0)*Math.sin(p.yaw)+(input.side||0)*Math.cos(p.yaw))/length*speed*dt;
  const dz=(-(input.forward||0)*Math.cos(p.yaw)+(input.side||0)*Math.sin(p.yaw))/length*speed*dt;
  if(walkable(p.x+dx,p.z))p.x+=dx;if(walkable(p.x,p.z+dz))p.z+=dz;
- p.vx=(p.x-oldX)/dt;p.vz=(p.z-oldZ)/dt;p.moving=Math.hypot(p.vx,p.vz)>.02;
- w.time+=dt;w.cameraYaw=wrap(.1+w.time*2*Math.PI/sweepSeconds);observe(w);
- if(p.moving){w.steps+=dt;if(w.steps>.72){w.steps=0;w.events.push('step');}}
+ p.vx=(p.x-oldX)/dt;p.vz=(p.z-oldZ)/dt;p.moving=Math.hypot(p.vx,p.vz)>.02;p.sprinting=sprint>1&&p.moving;
+ w.time+=dt;
+ const progress=(yard.startZ-p.z)/(yard.startZ-yard.doorZ);
+ if(!w.variableSweep&&(progress>=.5||w.time>=45)){w.variableSweep=true;w.nextSweepChange=w.time;}
+ if(p.sprinting&&!wasSprinting)w.nextSweepChange=w.time;
+ // Independent speed and timing draws prevent a predictable slow/fast rhythm.
+ if(w.time>=w.nextSweepChange){w.sweepTarget=Math.random()<.25?9+Math.random()*7:18+Math.sqrt(Math.random())*8;w.nextSweepChange=w.time+(p.sprinting?.9+Math.random()*1.3:2+Math.random()*2);}
+ w.sweepPeriod+=(w.sweepTarget-w.sweepPeriod)*(1-Math.exp(-dt/.35));
+ // Linger over the yard, not over a tracked person. Stationary players stay invisible.
+ const facing=clamp((-Math.cos(w.cameraYaw)+.12)/.24,0,1),linger=facing*facing*(3-2*facing);
+ w.cameraPeriod=w.sweepPeriod+(w.variableSweep?(28-w.sweepPeriod)*linger:0);
+ const turn=dt/w.cameraPeriod;w.cameraTurns+=turn;w.cameraYaw=wrap(w.cameraYaw+turn*2*Math.PI);observe(w);
+ if(p.moving){w.steps+=dt;if(w.steps>.72/sprint){w.steps=0;w.events.push('step');}}
  const t=w.turret,previousLift=t.lift;
- if(w.time-t.lastUse>=sweepSeconds*2)t.raised=false;
+ if(w.cameraTurns-t.lastUseTurn>=2)t.raised=false;
  // A lift may finish only while the motion camera currently observes movement.
  if(!t.raised)t.lift=Math.max(0,t.lift-dt/3.5);
  else if(w.observation&&w.time<t.until)t.lift=Math.min(1,t.lift+dt/2.8);
+ if(previousLift<1&&t.lift===1)w.events.push('lock');
  if(w.observation&&t.lift>=1&&w.time<t.until){
   const yawStep=clamp(wrap(t.yawGoal-t.yaw),-42*dt*Math.PI/180,42*dt*Math.PI/180),pitchStep=clamp(t.pitchGoal-t.pitch,-20*dt*Math.PI/180,20*dt*Math.PI/180);
   t.yaw=wrap(t.yaw+yawStep);t.pitch+=pitchStep;t.yawRate=yawStep/dt;t.pitchRate=pitchStep/dt;
@@ -133,5 +150,5 @@ export function stepGreenWorld(w,dt,input){
   b.age+=dt;if(b.y<0)b.age=10;if(b.age>=.8&&!w.result)w.shotResult='re-aim';
  }
  w.projectiles=w.projectiles.filter(b=>b.age<.8);w.tracers=w.tracers.filter(b=>b.until>w.time).slice(-16);
- if(!w.result&&Math.hypot(p.x-6,p.z+18.5)<1.2){w.result='escaped';w.events.push('door');}
+ if(!w.result&&Math.hypot(p.x-yard.doorX,p.z-yard.doorZ)<1.2){w.result='escaped';w.events.push('door');}
 }

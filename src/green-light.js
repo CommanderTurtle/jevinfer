@@ -6,13 +6,14 @@ import {createGreenAudio} from './green-light-audio.js';
 export function initGreenLight(client,toast){
  const stage=$('#green-stage'),canvas=$('#green-canvas'),overlay=$('#green-overlay'),title=$('#green-story-title'),line=$('#green-story-line'),action=$('#green-action');
  const sound=createGreenAudio(),keys=new Set();
+ const whisper=document.createElement('p');whisper.className='green-whisper';whisper.hidden=true;whisper.textContent='you may now sprint [shift]';whisper.setAttribute('role','status');stage.append(whisper);
  let world=createGreenWorld(),view=null,visible=false,phase='new',resumePhase='playing',run=null,flight=null;
- let raf=0,lastFrame=0,weather=0,storyTime=0,storyIndex=-1,nextRequest=0,failures=0,decisions=0,lastHud=0;
- let bolt=-10,nextBolt=8,thunderAt=Infinity,drag=null,wasLocked=false,lastMotor=false,lastReply='—';
+ let raf=0,lastFrame=0,weather=0,storyTime=0,storyIndex=-1,nextRequest=0,failures=0,decisions=0,lastHud=0,whisperUntil=0;
+ let bolt=-10,nextBolt=3.5,thunderAt=Infinity,drag=null,wasLocked=false,lastMotor=false,lastReply='—',shiftHeld=false;
  const story=[['Green Light',''],['','The neighbor installed a motion camera.'],['','Break in.'],['','Be careful.']];
- const storyBeat=5.2;
+ const storyBeat=3.8;
  $('#green-flashes').checked=matchMedia('(prefers-reduced-motion: reduce)').matches;
- function clearInput(){keys.clear();for(const b of stage.querySelectorAll('[data-green-key]'))b.setAttribute('aria-pressed','false');}
+ function clearInput(){keys.clear();shiftHeld=false;for(const b of stage.querySelectorAll('[data-green-key]'))b.setAttribute('aria-pressed','false');}
  function releasePointer(){if(document.pointerLockElement===canvas)document.exitPointerLock();}
  function abort(){run?.stop();run=null;}
  function screen(heading,body,button){
@@ -34,9 +35,9 @@ export function initGreenLight(client,toast){
   stage.classList.toggle('arriving',arriving);
   run=new Run();nextRequest=weather;failures=0;lastReply='—';canvas.focus({preventScroll:true});void sound.resume();
  }
- function retry(){abort();world=createGreenWorld();decisions=0;$('#green-inspection').textContent='';begin();}
+ function retry(){abort();world=createGreenWorld();decisions=0;whisperUntil=0;whisper.hidden=true;$('#green-inspection').textContent='';begin();}
  function intro(){
-  phase='intro';storyTime=0;storyIndex=-1;stage.classList.remove('arriving');stage.classList.add('cinematic');stage.style.setProperty('--story-duration',`${storyBeat}s`);screen('','','');void sound.resume();
+  phase='intro';storyTime=0;storyIndex=-1;stage.classList.remove('arriving','ready');stage.classList.add('cinematic');stage.style.setProperty('--story-duration',`${storyBeat}s`);screen('','','');$('#green-exit-intro').hidden=false;void sound.resume();
  }
  function commandLoop(){
   if(phase!=='playing'||!run||run.signal.aborted||flight||world.turret.turning||weather<nextRequest)return;
@@ -65,24 +66,31 @@ export function initGreenLight(client,toast){
    if(weather>=thunderAt){sound.play('thunder');thunderAt=Infinity;}
   }
   if(phase==='intro'){
-   storyTime+=elapsed;const index=Math.min(story.length-1,Math.floor(storyTime/storyBeat));
-   if(index!==storyIndex){storyIndex=index;title.textContent=story[index][0];line.textContent=story[index][1];overlay.classList.remove('story-change');void overlay.offsetWidth;overlay.classList.add('story-change');}
-   if(storyTime>=story.length*storyBeat)begin();
+   // A deep link has no autoplay permission: don't run a silent intro past the user.
+   if(sound.supported&&!sound.active&&!sound.muted){action.hidden=false;action.textContent='Enable sound';}
+   else{
+    action.hidden=true;storyTime+=elapsed;const index=Math.min(story.length-1,Math.floor(storyTime/storyBeat));
+    if(index!==storyIndex){storyIndex=index;title.textContent=story[index][0];line.textContent=story[index][1];overlay.classList.remove('story-change');void overlay.offsetWidth;overlay.classList.add('story-change');}
+    if(storyTime>=story.length*storyBeat)begin();
+   }
   }
   if(phase==='playing'){
    world.player.yaw+=((keys.has('ArrowRight')?1:0)-(keys.has('ArrowLeft')?1:0))*dt*.9;
    const forward=(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),side=(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0);
-   stepGreenWorld(world,dt,{forward,side});
+   const wasVariable=world.variableSweep;
+   stepGreenWorld(world,dt,{forward,side,sprint:shiftHeld});
+   if(!wasVariable&&world.variableSweep){whisperUntil=world.time+3.2;whisper.hidden=false;}
    for(const e of world.events)sound.play(e);world.events.length=0;
-   const motor=Math.abs(world.motor||0)>.005;if(lastMotor!==motor)sound.play('piston');lastMotor=motor;sound.update(world);
+   const motor=Math.abs(world.motor||0)>.005;if(lastMotor!==motor)sound.play(motor?'piston':'piston-stop');lastMotor=motor;sound.update(world);
    if(world.result)finish();else commandLoop();
   }
   const age=weather-bolt,flash=age<.8?Math.max(0,1-age/.8)*1.8:0;
+  if(phase!=='playing'||world.time>=whisperUntil)whisper.hidden=true;
   if(phase==='playing')view?.render(world,weather,flash,$('#green-flashes').checked);
   if(now-lastHud>150){
-   lastHud=now;$('#green-status').textContent=phase==='playing'?(world.player.moving?'MOVING':'STILL'):phase.toUpperCase();
+   lastHud=now;$('#green-status').textContent=phase==='playing'?(world.player.sprinting?'SPRINTING':world.player.moving?'MOVING':'STILL'):phase.toUpperCase();
    $('#green-network').textContent=`${decisions} decisions · ${lastReply}`;
-   $('#green-sound').textContent=sound.active?($('#green-sound').getAttribute('aria-pressed')==='true'?'Sound off':'Sound on'):'Enable sound';
+   $('#green-sound').textContent=sound.active?(sound.muted?'Sound off':'Sound on'):'Enable sound';
   }
   raf=requestAnimationFrame(frame);
  }
@@ -91,29 +99,31 @@ export function initGreenLight(client,toast){
   visible=value;
   if(!value){pause();cancelAnimationFrame(raf);raf=0;clearInput();releasePointer();sound.suspend();return;}
   if(!view){try{view=createGreenScene(canvas);}catch(error){phase='error';screen('Renderer unavailable',error.message,'');toast('Green Light needs WebGL2.');return;}}
-  if(phase==='new')intro();loop();
+  if(phase==='new'){phase='ready';stage.classList.add('cinematic','ready');screen('','','Start');$('#green-exit-intro').hidden=true;}
+  loop();
  }
- action.onclick=()=>{void sound.resume();if(phase==='intro')begin();else if(phase==='paused'){if(resumePhase==='intro')intro();else begin();}else if(['dead','escaped'].includes(phase))retry();};
+ action.onclick=()=>{void sound.resume();if(phase==='ready')intro();else if(phase==='paused'){if(resumePhase==='intro')intro();else begin();}else if(['dead','escaped'].includes(phase))retry();};
  $('#green-pause').onclick=()=>pause();
  $('#green-restart').onclick=()=>retry();
  $('#green-fullscreen').onclick=()=>{if(document.fullscreenElement)void document.exitFullscreen();else stage.requestFullscreen?.().catch(()=>{});};
  $('#green-sound').onclick=()=>{
-  const button=$('#green-sound');const muted=sound.active?button.getAttribute('aria-pressed')!=='true':false;
+  const button=$('#green-sound');const muted=sound.active?!sound.muted:false;
   button.setAttribute('aria-pressed',String(muted));sound.mute(muted);void sound.resume();
  };
  $('#green-exit-intro').onclick=()=>{if(phase==='intro')begin();else pause();};
  document.addEventListener('keydown',e=>{
   if(!visible||e.target.closest('input,textarea,select,dialog')||e.ctrlKey||e.metaKey||e.altKey)return;
+  shiftHeld=e.shiftKey;
   if(e.code==='Escape'){pause();return;}
-  if(phase==='playing'&&['KeyW','KeyA','KeyS','KeyD','ArrowLeft','ArrowRight'].includes(e.code)){keys.add(e.code);e.preventDefault();}
+  if(phase==='playing'&&['KeyW','KeyA','KeyS','KeyD','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code)){keys.add(e.code);e.preventDefault();}
  });
- document.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',clearInput);
+ document.addEventListener('keyup',e=>{keys.delete(e.code);shiftHeld=e.shiftKey;});window.addEventListener('blur',clearInput);
  document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();else loop();});
  document.addEventListener('pointerlockchange',()=>{const locked=document.pointerLockElement===canvas;if(wasLocked&&!locked&&phase==='playing')pause();wasLocked=locked;});
  function lookBy(dx,dy){world.player.yaw+=dx*.002;world.player.pitch=Math.max(-1.05,Math.min(.9,world.player.pitch-dy*.002));}
  document.addEventListener('mousemove',e=>{if(phase==='playing'&&document.pointerLockElement===canvas)lookBy(e.movementX,e.movementY);});
  canvas.addEventListener('pointerdown',e=>{
-  if(phase!=='playing')return;void sound.resume();canvas.focus({preventScroll:true});
+  if(phase!=='playing')return;shiftHeld=e.shiftKey;void sound.resume();canvas.focus({preventScroll:true});
   drag={id:e.pointerId,x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);
   if(e.pointerType==='mouse'&&document.pointerLockElement!==canvas){try{canvas.requestPointerLock?.()?.catch?.(()=>{});}catch{}}
  });

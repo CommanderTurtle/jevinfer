@@ -1,17 +1,19 @@
 import * as THREE from '../vendor/three.js';
-import {cameraMount,silo,cover,turretOrigin} from './green-light-world.js';
+import {cameraMount,cameraRange,yard,silo,cover,turretOrigin} from './green-light-world.js';
+import {createWetLens} from './green-light-weather.js';
 
 export function createGreenScene(canvas){
  const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'low-power'});
- renderer.setPixelRatio(Math.min(devicePixelRatio,1.4));renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;
- const scene=new THREE.Scene();scene.background=new THREE.Color('#05090a');scene.fog=new THREE.FogExp2('#111b1b',.027);
- const eye=new THREE.PerspectiveCamera(66,1,.06,130),look=new THREE.Vector3();
+ renderer.setPixelRatio(Math.min(devicePixelRatio,1.4));renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.22;
+ const wetLens=createWetLens(renderer),reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const scene=new THREE.Scene();scene.background=new THREE.Color('#252d32');scene.fog=new THREE.FogExp2('#343e43',.0135);
+ const eye=new THREE.PerspectiveCamera(66,1,.06,170),look=new THREE.Vector3();
  const mats=new Map(),textures=[];
  const mat=(color,roughness=.85,metalness=0)=>{const key=[color,roughness,metalness].join('/');if(!mats.has(key))mats.set(key,new THREE.MeshStandardMaterial({color,roughness,metalness}));return mats.get(key);};
  function mesh(parent,geometry,material,x=0,y=0,z=0){const o=new THREE.Mesh(geometry,material);o.position.set(x,y,z);parent.add(o);return o;}
  const box=(parent,x,y,z,w,h,d,color)=>mesh(parent,new THREE.BoxGeometry(w,h,d),mat(color),x,y,z);
  function cylinder(parent,x,y,z,r1,r2,h,color){return mesh(parent,new THREE.CylinderGeometry(r1,r2,h,16),mat(color,.4,.4),x,y,z);}
- const hemi=new THREE.HemisphereLight('#a5bec4','#20231e',.55),moon=new THREE.DirectionalLight('#a9c0cb',.8),lightning=new THREE.DirectionalLight('#d5eaff',0);
+ const hemi=new THREE.HemisphereLight('#c0c9d1','#4a504c',1.05),moon=new THREE.DirectionalLight('#b6c3cc',1.15),lightning=new THREE.DirectionalLight('#d5eaff',0);
  moon.position.set(-18,38,20);lightning.position.set(15,35,-30);scene.add(hemi,moon,lightning);
 
  const groundCanvas=document.createElement('canvas');groundCanvas.width=groundCanvas.height=256;
@@ -19,19 +21,20 @@ export function createGreenScene(canvas){
  for(let i=0;i<5000;i++){const x=Math.random()*256,y=Math.random()*256;ctx.fillStyle=i%3?'#202924':'#485247';ctx.fillRect(x,y,1,1+Math.random()*4);}
  const groundTex=new THREE.CanvasTexture(groundCanvas);groundTex.wrapS=groundTex.wrapT=THREE.RepeatWrapping;groundTex.repeat.set(10,14);groundTex.colorSpace=THREE.SRGBColorSpace;textures.push(groundTex);
  const earth=new THREE.MeshStandardMaterial({map:groundTex,roughness:.68,metalness:.12});
- const ground=mesh(scene,new THREE.PlaneGeometry(90,110),earth,0,-.025,0);ground.rotation.x=-Math.PI/2;
+ const ground=mesh(scene,new THREE.PlaneGeometry(90,180),earth,0,-.025,28);ground.rotation.x=-Math.PI/2;
  // Puddles catch moonlight without a reflection pass or external textures.
  const puddleMat=new THREE.MeshStandardMaterial({color:'#17282a',roughness:.13,metalness:.8,transparent:true,opacity:.8});
- for(let i=0;i<22;i++){const p=mesh(scene,new THREE.CircleGeometry(1,24),puddleMat,Math.sin(i*12.34)*12,.006,-16+(i*7.3%38));p.rotation.x=-Math.PI/2;p.scale.set(.4+(i%5)*.22,.18+(i%3)*.12,1);}
- for(let i=0;i<17;i++)box(scene,6+Math.sin(i)*.15,.015,19-i*2.2,1.4,.035,1.5,'#424945');
+ for(let i=0;i<46;i++){const p=mesh(scene,new THREE.CircleGeometry(1,24),puddleMat,Math.sin(i*12.34)*12,.006,-16+(i*7.3%80));p.rotation.x=-Math.PI/2;p.scale.set(.4+(i%5)*.22,.18+(i%3)*.12,1);}
+ for(let z=yard.startZ;z>yard.doorZ;z-=2.2)box(scene,6+Math.sin(z)*.15,.015,z,1.4,.035,1.5,'#56615d');
 
  const fenceMat=mat('#323b34'),slatGeometry=new THREE.BoxGeometry(.19,2.5,.11),slats=[];
- for(let z=-19;z<=24;z+=.23){slats.push({x:-14,z,angle:Math.PI/2},{x:14,z,angle:Math.PI/2});}
- for(let x=-14;x<=14;x+=.23)slats.push({x,z:24,angle:0});
+ const backFence=yard.maxZ+1.5,fenceLength=backFence+19;
+ for(let z=-19;z<=backFence;z+=.23){slats.push({x:-14,z,angle:Math.PI/2},{x:14,z,angle:Math.PI/2});}
+ for(let x=-14;x<=14;x+=.23)slats.push({x,z:backFence,angle:0});
  const fence=new THREE.InstancedMesh(slatGeometry,fenceMat,slats.length),dummy=new THREE.Object3D();
  slats.forEach((p,i)=>{dummy.position.set(p.x,1.23,p.z);dummy.rotation.set(0,p.angle,0);dummy.updateMatrix();fence.setMatrixAt(i,dummy.matrix);});scene.add(fence);
- for(const x of [-14,14])for(const y of [.65,1.85])box(scene,x,y,2.5,.2,.16,43,'#242b26');
- for(const y of [.65,1.85])box(scene,0,y,24,28,.16,.2,'#242b26');
+ for(const x of [-14,14])for(const y of [.65,1.85])box(scene,x,y,(backFence-19)/2,.2,.16,fenceLength,'#242b26');
+ for(const y of [.65,1.85])box(scene,0,y,backFence,28,.16,.2,'#242b26');
 
  box(scene,0,3,-23,24,6,8,'#303937');
  for(let y=.3;y<6;y+=.35)box(scene,0,y,-18.96,24,.025,.035,'#202925');
@@ -64,14 +67,14 @@ export function createGreenScene(canvas){
  const head=new THREE.Group();head.rotation.x=-.26;scanner.add(head);
  box(head,0,0,-.2,.45,.31,.9,'#78887a');box(head,0,-.02,-.66,.33,.22,.02,'#08120b');
  const lens=mesh(head,new THREE.CircleGeometry(.085,12),new THREE.MeshBasicMaterial({color:'#8bdc91'}),0,0,-.68);lens.rotation.y=Math.PI;
- const spot=new THREE.SpotLight('#589a71',25,58,Math.PI*38/180,.6,.7);spot.position.copy(scanner.position);scene.add(spot,spot.target);
- const beamPositions=[0,.035,0];for(let i=0;i<=24;i++){const a=-Math.PI*38/180+i*Math.PI*76/180/24;beamPositions.push(Math.sin(a)*53,.035,-Math.cos(a)*53);}
+ const spot=new THREE.SpotLight('#589a71',40,cameraRange,Math.PI*38/180,.6,.7);spot.position.copy(scanner.position);scene.add(spot,spot.target);
+ const beamPositions=[0,.035,0];for(let i=0;i<=24;i++){const a=-Math.PI*38/180+i*Math.PI*76/180/24;beamPositions.push(Math.sin(a)*(cameraRange-2),.035,-Math.cos(a)*(cameraRange-2));}
  const fanGeometry=new THREE.BufferGeometry();fanGeometry.setAttribute('position',new THREE.Float32BufferAttribute(beamPositions,3));const indices=[];for(let i=1;i<=24;i++)indices.push(0,i,i+1);fanGeometry.setIndex(indices);
  const fan=mesh(scene,fanGeometry,new THREE.MeshBasicMaterial({color:'#609675',transparent:true,opacity:.035,side:THREE.DoubleSide,depthWrite:false}),cameraMount.x,0,cameraMount.z);
 
  // Instanced trunks/branches: silhouettes, not a forest of draw calls.
  const branchGeometry=new THREE.CylinderGeometry(.05,.15,1,5),segments=[];
- for(let i=0;i<24;i++){
+ for(let i=0;i<40;i++){
   const x=(i%2?1:-1)*(17+i%5*2),z=-26+i*2.8,h=7+i%5;
   segments.push({x,y:h/2,z,h,rz:0,rx:0});
   for(let j=0;j<4;j++)segments.push({x:x+(j%2?1:-1)*.6,y:h*(.45+j*.12),z:z+.2,h:3,rz:(j%2?1:-1)*.7,rx:j*.4});
@@ -88,7 +91,7 @@ export function createGreenScene(canvas){
  function render(w,weather,flash,reduceFlash){
   const r=canvas.getBoundingClientRect();if(r.width<1||r.height<1)return;
   if(width!==r.width||height!==r.height){width=r.width;height=r.height;renderer.setSize(width,height,false);eye.aspect=width/height;eye.updateProjectionMatrix();}
-  const p=w.player,bob=p.moving?Math.sin(w.time*8)*.022:0;
+  const p=w.player,bob=p.moving?Math.sin(w.time*8*(p.sprinting?1.35:1))*(p.sprinting?.03:.022):0;
   eye.position.set(p.x,p.y+bob,p.z);look.set(p.x+Math.sin(p.yaw)*Math.cos(p.pitch),p.y+bob+Math.sin(p.pitch),p.z-Math.cos(p.yaw)*Math.cos(p.pitch));eye.lookAt(look);
   const o=turretOrigin(w);mount.position.set(o.x,o.y,o.z);mount.rotation.y=-w.turret.yaw;pivot.rotation.x=w.turret.pitch;
   piston.position.y=(3.25+o.y)/2;piston.scale.y=Math.max(.02,o.y-3.25);mount.visible=w.turret.lift>.2;
@@ -104,11 +107,11 @@ export function createGreenScene(canvas){
   }
   rainGeometry.attributes.position.needsUpdate=true;
   w.tracers.forEach((t,i)=>traceData.set([t.a.x,t.a.y,t.a.z,t.b.x,t.b.y,t.b.z],i*6));traceGeometry.setDrawRange(0,w.tracers.length*2);traceGeometry.attributes.position.needsUpdate=true;
-  renderer.render(scene,eye);
+  wetLens.render(scene,eye,weather,reducedMotion);
  }
  function dispose(){
   const geometries=new Set(),materials=new Set();scene.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.material)materials.add(o.material);if(o.isInstancedMesh)o.dispose();});
-  geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());renderer.dispose();
+  geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());wetLens.dispose();renderer.dispose();
  }
  return {render,dispose};
 }
