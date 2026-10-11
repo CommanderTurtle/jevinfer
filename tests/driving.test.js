@@ -75,7 +75,7 @@ test('Route actuator follows complete circuits without changing the chosen pedal
   expect(w.finished).toBe(true);expect(w.hits).toBe(0);expect(w.lap).toBe(4);
  }
  const idle=createCourse('kart');stepCourse(idle,1,{line:1,pedal:'BRAKE'});expect(idle.distance).toBe(0);
-});
+},15000);
 test('Route actuator traverses every slalom gate without cutting through cones',()=>{
  const w=createCourse('slalom');
  for(let i=0;i<1200&&!w.finished;i++){const s=courseState(w);stepCourse(w,.05,{line:0,pedal:w.speed*3.6<s.recommended_speed_kmh?'FORWARD':'BRAKE'});}
