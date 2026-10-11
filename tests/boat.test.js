@@ -1,7 +1,15 @@
 import {test,expect} from 'bun:test';
-import {createBoat,stepBoat,boatState,fireBroadside,seaHeight,seaWaves,waterHeight,boatQuestions} from '../src/boat-physics.js';
+import {createBoat,stepBoat,boatState,fireBroadside,seaHeight,seaWaves,waterHeight,boatQuestions,boatContract,decodeBoat} from '../src/boat-physics.js';
 import {validQuestions} from '../src/core.js';
 const advance=(w,seconds,command={pedal:'FULL',steer:0})=>{for(let t=0;t<seconds;t+=1/60)stepBoat(w,1/60,command);};
+test('Cannon questions appear only with a loaded bank and target in its arc',()=>{
+ const w=createBoat();w.time=5;w.police=[{id:0,x:25,z:0,heading:0,speed:0,hull:3}];
+ expect(Object.keys(boatContract(w).questions)).toEqual(['rudder','sail','starboard_fire']);
+ expect(boatContract(w).state.phase).toBe('repel boarding');expect(boatContract(w).state.island).toBeUndefined();
+ w.reloads.right=2;expect(Object.keys(boatContract(w).questions)).toEqual(['rudder','sail']);
+ expect(decodeBoat({rudder:{choice:'CENTER'},sail:{choice:'FULL'}})).toEqual({steer:0,sail:1,port:false,starboard:false});
+ w.police[0].x=150;expect(boatContract(w).state.phase).toBe('voyage');expect(boatContract(w).state.island.range_m).toBe(12000);
+});
 test('Boat boarding precedes motion; density and finite horizon are independent of model sequences',()=>{
  const w=createBoat('high');advance(w,4);expect(w.distance).toBe(0);advance(w,3);expect(w.distance).toBeGreaterThan(0);expect(w.police.length).toBe(6);
  w.police.push({id:50,x:9999,z:9999,hull:3,speed:12});expect(boatState(w).boats.length).toBeLessThan(7);expect(Object.keys(validQuestions(boatQuestions))).toEqual(['rudder','sail','port_fire','starboard_fire']);
@@ -16,11 +24,32 @@ test('Broadside reload is bounded and projectiles disable a boat',()=>{
  expect(fireBroadside(w,1)).toBe(true);expect(fireBroadside(w,1)).toBe(false);expect(w.balls.length).toBe(3);advance(w,1,{pedal:'COAST'});
  expect(w.disabled).toBe(1);expect(w.police[0].hull).toBe(0);expect(w.shots).toBe(1);expect(w.bursts.some(b=>b.type==='fire')).toBe(true);
 });
-test('Collision, steep wave damage, sinking and escape are real simulation outcomes',()=>{
+test('Collision, steep wave damage and sinking remain real; distance does not end pursuit',()=>{
  const w=createBoat();w.time=5;w.police=[{id:0,x:2,z:1,heading:0,speed:0,hull:3}];stepBoat(w,.02);expect(w.hits).toBe(1);expect(w.hull).toBeLessThan(100);
  w.police=[];w.waves=[{x:w.x,z:w.z,radius:100}];w.speed=18;const before=w.hull;advance(w,1);expect(w.hull).toBeLessThan(before);
  w.hull=.001;stepBoat(w,.1,{pedal:'FULL'});expect(w.finished).toBe(true);expect(w.failed).toBe(true);
- const safe=createBoat();safe.time=5;safe.z=-safe.escape-1;stepBoat(safe,.1);expect(safe.finished).toBe(true);expect(safe.failed).toBe(false);
+ const safe=createBoat();safe.time=5;safe.z=-2000;stepBoat(safe,.1);expect(safe.finished).toBe(false);expect(safe.failed).toBe(false);
+});
+test('Destroyed pursuers return staggered, reusing bounded fleet slots',()=>{
+ const w=createBoat('high');w.time=5;w.waves=[];
+ for(const p of w.police){p.hull=0;p.destroyedAt=5;}
+ advance(w,8,{sail:0});expect(w.reinforcements).toBe(1);expect(w.police.filter(p=>p.hull>0).length).toBe(1);
+ advance(w,3,{sail:0});expect(w.reinforcements).toBe(1);
+ advance(w,2,{sail:0});expect(w.reinforcements).toBe(2);expect(w.police.length).toBe(6);
+ expect(new Set(w.police.map(p=>p.id)).size).toBe(6);
+});
+test('The distant island is the destination; heading toward it alone is not victory',()=>{
+ const w=createBoat();w.time=5;w.police=[];w.waves=[];
+ expect(boatState(w).island.range_m).toBe(12000);expect(boatState(w).island.bearing_deg).toBe(0);
+ stepBoat(w,.1,{sail:1});expect(w.finished).toBe(false);
+ w.z=w.island.z+w.island.radius+1;w.speed=5;stepBoat(w,.5,{sail:1});expect(w.finished).toBe(true);expect(w.failed).toBe(false);expect(w.endReason).toBe('LANDED');
+});
+test('Endless travel keeps waves nearby and fleets bounded without removing losses',()=>{
+ const w=createBoat('high');w.time=5;
+ for(let i=0;i<100;i++){w.x+=1000;w.z-=1000;stepBoat(w,.2,{sail:0});}
+ expect(w.finished).toBe(false);expect(w.police.length).toBe(6);expect(w.waves.length).toBe(18);expect(w.reinforcements).toBeGreaterThan(0);
+ stepBoat(w,1,{sail:0});expect(w.waves.every(p=>Math.hypot(p.x-w.x,p.z-w.z)<400)).toBe(true);
+ w.hull=0;stepBoat(w,.01);expect(w.finished).toBe(true);expect(w.endReason).toBe('SUNK');
 });
 test('Water stays finite; disabled pursuers and finite effects are bounded',()=>{
  expect(Math.abs(seaHeight(125,-451,12))).toBeLessThanOrEqual(seaWaves.reduce((v,w)=>v+w[0],0));

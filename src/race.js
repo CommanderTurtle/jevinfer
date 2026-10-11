@@ -2,11 +2,12 @@ import {$,el,Run,delay} from './core.js';
 import {createWorld,stepWorld,drivingQuestions,drivingState} from './race-physics.js';
 import {freeCourses,createCourse,stepCourse,courseState,recoverCourse} from './race-course.js';
 import {createRaceScene} from './race-scene.js';
-import {createBoat,stepBoat,boatState,boatQuestions,decodeBoat} from './boat-physics.js';
+import {createBoat,stepBoat,boatState,boatContract,decodeBoat} from './boat-physics.js';
 import {createBoatScene} from './boat-scene.js';
-import {modeQuestions,decodeControls} from './vehicle-controls.js';
 import {initManualControls} from './manual-controls.js';
 import {kartStandings} from './kart-items.js';
+import {inferDriving,resetDrivingPolicy} from './driving-policy.js';
+import {createCombatPilot} from './combat-policy.js';
 export {drivingQuestions,drivingState} from './race-physics.js';
 
 export function initRace(client,toast){
@@ -14,6 +15,7 @@ export function initRace(client,toast){
  let roadView='chase';
  let view=null,world,mode='parked',run=null,visible=false,raf=0,last=0,target=1,throttle='COAST',command={steer:0,pedal:'COAST'},decisions=0,lastDecision=0,lastHud=0,peak=0;
  const manual=initManualControls($('#race-manual'),keys,()=>mode==='manual');
+ let combat=null,weapon=null;
  const isFree=()=>freeCourses.has(world.course);
  const isBoat=()=>world.course==='pirate';
 
@@ -31,10 +33,10 @@ export function initRace(client,toast){
   $('#race-assist').parentElement.hidden=!isFree();hud();
  }
  function hud(){
-  $('#race-mode').textContent=world.finished?(world.failed?(world.endReason||'FAILED'):'FINISH'):isBoat()&&world.time>0&&world.time<5?'EMBARKING':mode==='parked'?(world.time?'PAUSED':'READY'):mode.toUpperCase();$('#race-speed').textContent=Math.round(world.speed*3.6);$('#race-distance').textContent=Math.round(world.distance);
+  $('#race-mode').textContent=world.finished?(world.endReason||(world.failed?'FAILED':'FINISH')):isBoat()&&world.time>0&&world.time<5?'EMBARKING':mode==='parked'?(world.time?'PAUSED':'READY'):mode.toUpperCase();$('#race-speed').textContent=Math.round(world.speed*3.6);$('#race-distance').textContent=Math.round(world.distance);
   $('#race-hits').textContent=world.hits;$('#race-decisions').textContent=decisions;$('#race-clock').textContent=world.time.toFixed(1)+' s';
   let progress=world.passed+' passed';
-  if(isBoat())progress=Math.min(100,Math.max(0,-world.z/world.escape*100)).toFixed(0)+'% · escape';
+  if(isBoat())progress=(Math.max(0,Math.hypot(world.x-world.island.x,world.z-world.island.z)-world.island.radius)/1000).toFixed(1)+' km to island · '+world.reinforcements+' reinforcements';
   else if(world.course==='race')progress=Math.min(100,world.distance/20).toFixed(0)+'% · 2 km';
   else if(world.course==='parking')progress=world.finished?'Parked ✓':world.parkHold>0?'Hold · '+world.parkHold.toFixed(1)+' s':world.parkPhase?'Align & stop':'Approach bay';
   else if(world.course==='slalom')progress=world.gate+'/'+world.gates.length+' gates · '+world.missed+' missed';
@@ -45,23 +47,24 @@ export function initRace(client,toast){
   manual.draw(!isFree()&&!isBoat()?{lane:target,throttle}:command,world);
   if($('#race-sensor-panel').open)$('#race-sensors').textContent=JSON.stringify(snapshot(),null,2);
  }
- function stop(){run?.stop();run=null;mode='parked';manual.clear();$('#race-stop').disabled=true;$('#race-start').disabled=false;$('#race-demo').disabled=false;hud();}
+ function stop(){run?.stop();run=null;combat=null;weapon=null;mode='parked';manual.clear();$('#race-stop').disabled=true;$('#race-start').disabled=false;$('#race-demo').disabled=false;hud();}
  function log(text){$('#race-log').prepend(el('div',{},text));while($('#race-log').children.length>5)$('#race-log').lastChild.remove();}
  async function start(){
   stop();if(!init3D())return;if(world.finished)reset();const current=new Run();run=current;mode='jev';lastDecision=performance.now();throttle='COAST';command={steer:0,pedal:'COAST'};
+  resetDrivingPolicy(world);combat=createCombatPilot(client,()=>world,current.signal,a=>{weapon=a;log((world.item||'Item')+(a.target?' → '+a.target:''));},e=>log('Weapon · '+e.message));
   $('#race-start').disabled=true;$('#race-demo').disabled=true;$('#race-stop').disabled=false;let retry=0;
   try{while(!current.signal.aborted&&!world.finished){
    if(isBoat()&&world.time<5){lastDecision=performance.now();await delay(100,current.signal);continue;}
    const started=performance.now();let result;
 
-   try{result=await client.infer(snapshot(),isBoat()?boatQuestions:!isFree()?drivingQuestions:modeQuestions(world.course),current.signal);retry=0;}
+   try{const helm=isBoat()?boatContract(world):null;result=isFree()?await inferDriving(client,world,current.signal):await client.infer(helm?.state||snapshot(),helm?.questions||drivingQuestions,current.signal);retry=0;}
    catch(e){if(!current.signal.aborted&&/^HTTP 429:/.test(e.message)&&retry<4){retry++;command={brake:1,steer:0,pedal:'REEF'};throttle='BRAKE';$('#race-command').textContent='Endpoint busy · braking';log('Retry '+retry+'/4');await delay(500*2**(retry-1),current.signal);continue;}throw e;}
    if(current.signal.aborted)break;const age=performance.now()-started;decisions++;world.reactionSeconds=+(Math.max(age,Number($('#race-interval').value))/1000*Number($('#race-timescale').value)).toFixed(2);
    if(age>4000){command={brake:1,steer:0,pedal:'REEF'};throttle='BRAKE';log('Stale command · brake');}
    else{
     if(isBoat()){command=decodeBoat(result.answers);$('#race-command').textContent=result.answers.rudder.choice+' / '+result.answers.sail.choice+(command.port?' / PORT FIRE':'')+(command.starboard?' / STARBOARD FIRE':'');}
     else if(!isFree()){target=['LEFT','CENTER','RIGHT'].indexOf(result.answers.lane.choice);throttle=result.answers.throttle.choice;$('#race-command').textContent=result.answers.lane.choice+' / '+throttle;}
-    else{command=decodeControls(result.answers);$('#race-command').textContent=result.answers.steering.choice+' / '+result.answers.motion.choice;}
+    else{command=result.command;$('#race-command').textContent=result.phase+' / '+command.gear+' / wheel '+Math.round(command.steer*100)+'%';}
     world.recentControls=[...(world.recentControls||[]),{at:+world.time.toFixed(2),command:{...command},speed_kmh:Math.round(world.speed*3.6),contacts:world.hits}].slice(-2);
     lastDecision=performance.now();log('#'+decisions+' · '+$('#race-command').textContent);
    }
@@ -77,9 +80,10 @@ export function initRace(client,toast){
    dt*=Number($('#race-timescale').value);const stale=mode==='jev'&&(now-lastDecision)>4000;
    if(mode==='manual')manualCommand();const hits=world.hits;
    if(isBoat())stepBoat(world,dt,stale?{steer:0,pedal:'COAST',fire:0}:command);
-   else if(isFree())stepCourse(world,dt,stale?{steer:0,brake:1}:command);
+   else if(isFree()){stepCourse(world,dt,stale?{steer:0,brake:1}:mode==='jev'?{...command,item:!!weapon?.item,itemTarget:weapon?.target}:command);weapon=null;}
    else while(dt>0){const step=Math.min(dt,1/120);stepWorld(world,step,target,stale?'BRAKE':throttle);dt-=step;}
    peak=Math.max(peak,Math.abs(world.speed));if(world.hits>hits)log('Contact · '+world.hits);if(world.finished)stop();
+   if(mode==='jev')combat?.tick();
   }
   if(now-lastHud>100){hud();lastHud=now;}
   view?.render(world,{realistic:false,view:$('#race-camera').value});raf=requestAnimationFrame(tick);

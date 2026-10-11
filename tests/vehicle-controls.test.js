@@ -1,9 +1,14 @@
 import {test,expect} from 'bun:test';
 import {vehicleStep,recoverySteering,resetRecovery,surroundings,decodeControls} from '../src/vehicle-controls.js';
-import {createCourse,stepCourse,pathPoint} from '../src/race-course.js';
+import {createCourse,stepCourse,pathPoint,courseState} from '../src/race-course.js';
 import {stepItems,useItem} from '../src/kart-items.js';
 const body=()=>({x:0,z:0,time:0,speed:0,heading:0,steer:0,course:'parking',contacts:new Set()});
 const advance=(w,n,c)=>{for(let i=0;i<n*120;i++){w.time+=1/120;vehicleStep(w,1/120,c);}};
+test('Wall clearance is body-relative and agrees with physical reverse escape',()=>{
+ const w=createCourse('slalom');w.x=15.99;w.z=-15;w.heading=Math.PI/2;w.contacts.add('edge');
+ const s=courseState(w);expect(s.observations.boundary_clearance_m.front).toBe(0);expect(s.observations.bumper_clearance_m.front).toBe(0);expect(s.observations.boundary_clearance_m.rear).toBeGreaterThan(25);
+ stepCourse(w,2,{gear:'REVERSE',throttle:.3,steer:0});expect(w.x).toBeLessThan(15);expect(w.contacts.size).toBe(0);
+});
 test('Pedal feathering yields different acceleration; brakes do not switch gear',()=>{
  const a=body(),b=body();advance(a,2,{throttle:.12});advance(b,2,{throttle:1});expect(a.speed).toBeGreaterThan(0);expect(a.speed).toBeLessThan(b.speed/2);
  advance(b,2,{brake:1});expect(b.speed).toBe(0);advance(b,1,{brake:1});expect(b.speed).toBe(0);

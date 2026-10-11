@@ -1,5 +1,5 @@
 import {clamp} from './core.js';
-import {vehicleQuestions,vehicleStep,vehicleState,surroundings,manoeuvrePreview,resetRecovery} from './vehicle-controls.js';
+import {vehicleQuestions,vehicleStep,vehicleState,surroundings,manoeuvrePreview,boundaryClearance,resetRecovery} from './vehicle-controls.js';
 import {initItems,stepItems,itemState} from './kart-items.js';
 
 export const freeCourses=new Set(['parking','slalom','kart','city']);
@@ -141,14 +141,25 @@ export function courseTarget(w){
  if(w.course==='slalom')return w.gates[w.gate]||{x:4,z:-270};
  const p=projectPath(w.path,w);return pathPoint(w.path,p.s+Math.max(8,Math.abs(w.speed)*.85));
 }
+export function roadPosition(w){
+ const p=w.halfWidth?projectPath(w.path,w):{x:0,z:w.z,heading:0};
+ const half=w.halfWidth?w.halfWidth-.7:w.bounds.x-1;
+ const offset=(w.x-p.x)*Math.cos(p.heading)+(w.z-p.z)*Math.sin(p.heading);
+ const lateral=w.speed*Math.sin(w.heading-(w.slip||0)-p.heading),left=Math.max(0,half+offset),right=Math.max(0,half-offset);
+ return {scale:'Road-relative: -100 left wall, 0 centre, +100 right wall.',position:Math.round(clamp(offset/half,-1,1)*100),left_clearance_m:+left.toFixed(1),right_clearance_m:+right.toFixed(1),drifting:lateral<-.1?'left':lateral>.1?'right':'parallel',closing_m_s:+Math.abs(lateral).toFixed(1),seconds_to_edge:Math.abs(lateral)>.1?+((lateral<0?left:right)/Math.abs(lateral)).toFixed(2):null,heading_from_road_degrees:+(angleWrap(w.heading-p.heading)*180/Math.PI).toFixed(1)};
+}
 export function courseState(w){
  const target=courseTarget(w),bearing=angleWrap(Math.atan2(target.x-w.x,w.z-target.z)-w.heading),p=projectPath(w.path,w);
  const forward=Math.sin(w.heading),north=Math.cos(w.heading);
  const tf=(target.x-w.x)*forward-(target.z-w.z)*north,tr=(target.x-w.x)*north+(target.z-w.z)*forward;
  const targetState={description:w.course==='parking'?(w.parkPhase?'parking bay centre':'approach in front of the parking bay'):w.course==='slalom'?'centre of next cone gate':'next road waypoint',direction:(tf<0?'behind':'ahead')+(tr<-.5?' left':tr>.5?' right':''),forward_m:+tf.toFixed(1),right_m:+tr.toFixed(1),distance_m:+distance(w,target).toFixed(1),bearing_degrees:+(bearing*180/Math.PI).toFixed(1),alignment_degrees:+(angleWrap((target.heading||0)-w.heading)*180/Math.PI).toFixed(1)};
- const edge=q=>Math.abs(q.x)>w.bounds.x-1||Math.abs(q.z)>w.bounds.z-1||(w.halfWidth&&projectPath(w.path,q).distance>w.halfWidth-.8);
+ const edge=q=>Math.abs(q.x)>w.bounds.x-1||Math.abs(q.z)>w.bounds.z-1||(w.halfWidth&&projectPath(w.path,q).distance>w.halfWidth-.7);
+ const observations=surroundings(w,w.objects,w.course==='parking'?40:100,w.course==='parking'?30:40,w.course==='parking'?40:45);
+ observations.boundary_clearance_m=boundaryClearance(w,edge);
+ observations.road_position=roadPosition(w);
+ for(const side of ['front','rear'])observations.bumper_clearance_m[side]=Math.min(observations.bumper_clearance_m[side],observations.boundary_clearance_m[side]);
  const navigation=[5,12,25,45].map(d=>{const q=pathPoint(w.path,p.s+d),dx=q.x-w.x,dz=q.z-w.z;return [d,+(dx*forward-dz*north).toFixed(1),+(dx*north+dz*forward).toFixed(1),+(angleWrap(q.heading-w.heading)*180/Math.PI).toFixed(1)];});
- return {task:({parking:'Park the entire car inside the marked bay, aligned and stopped.',slalom:'Finish the timed slalom quickly through every gate. Cone and boundary contacts are penalties.',city:'Drive the circuit efficiently. Yield to pedestrians and signals; avoid vehicle contact.',kart:'Win the three-lap combat race. Overtake rivals, collect pickups, attack with items, defend and drift. Rival bumps are legal; walls and attacks cost speed.'})[w.course],course:w.course,vehicle:vehicleState(w),target:targetState,navigation:{columns:['path_ahead_m','forward_m','right_m','heading_deg'],points:navigation},observations:surroundings(w,w.objects,w.course==='parking'?40:100,w.course==='parking'?30:40,w.course==='parking'?40:45),manoeuvres:manoeuvrePreview(w,w.objects,edge),
+ return {task:({parking:'Park the entire car inside the marked bay, aligned and stopped.',slalom:'Finish the timed slalom quickly through every gate. Cone and boundary contacts are penalties.',city:'Drive the circuit efficiently. Yield to pedestrians and signals; avoid vehicle contact.',kart:'Win the three-lap combat race. Overtake rivals, collect pickups, attack with items, defend and drift. Rival bumps are legal; walls and attacks cost speed.'})[w.course],course:w.course,vehicle:vehicleState(w),target:targetState,navigation:{columns:['path_ahead_m','forward_m','right_m','heading_deg'],points:navigation},observations,manoeuvres:manoeuvrePreview(w,w.objects,edge),
  road:{half_width_m:w.halfWidth||w.bounds.x,lateral_error_m:+((w.x-p.x)*Math.cos(p.heading)+(w.z-p.z)*Math.sin(p.heading)).toFixed(1),heading_error_deg:+(angleWrap(p.heading-w.heading)*180/Math.PI).toFixed(1),bounds:{left:-w.bounds.x,right:w.bounds.x,north:-w.bounds.z,south:w.bounds.z}},
  touching_obstacle:!!w.contacts.size,contacts:[...w.contacts],previous_controls:w.recentControls||[],recovery_assist:w.recoveryAssist?{enabled:true,active_wheel:w.recovery?.lock||null}:undefined,traffic_signals:(w.crossings||[]).filter(c=>distance(w,c)<60).map(c=>({forward_m:+((c.x-w.x)*forward-(c.z-w.z)*north).toFixed(1),right_m:+((c.x-w.x)*north+(c.z-w.z)*forward).toFixed(1),status:signalAt(w,c)})),
  parking:w.bay?{...w.bay,inside_and_aligned:parkingFit({...w,speed:0})}:undefined,next_gates:w.gates.slice(w.gate,w.gate+3).map(g=>({forward_m:+((g.x-w.x)*forward-(g.z-w.z)*north).toFixed(1),right_m:+((g.x-w.x)*north+(g.z-w.z)*forward).toFixed(1),opening_width_m:g.width})),position:{x:+w.x.toFixed(1),z:+w.z.toFixed(1),heading_deg:+(w.heading*180/Math.PI).toFixed(1)},kart:w.course==='kart'?itemState(w):undefined,control_period_seconds:w.reactionSeconds||.4};

@@ -1,9 +1,10 @@
 // Opt-in, closed-loop synthetic driving. Reports behavior, not guaranteed policy quality.
 import {Client} from '../src/core.js';
-import {modeQuestions,decodeControls} from '../src/vehicle-controls.js';
 import {createWorld,stepWorld,drivingState,drivingQuestions} from '../src/race-physics.js';
 import {createCourse,stepCourse,courseState} from '../src/race-course.js';
-import {createBoat,stepBoat,boatState,boatQuestions,decodeBoat} from '../src/boat-physics.js';
+import {createBoat,stepBoat,boatState,boatContract,decodeBoat} from '../src/boat-physics.js';
+import {inferDriving} from '../src/driving-policy.js';
+import {createCombatPilot} from '../src/combat-policy.js';
 const url=process.env.JEV_ENDPOINT;
 if(!url)throw Error('Set JEV_ENDPOINT to the local NInfer origin.');
 const steps=Number(process.env.JEV_DRIVE_STEPS||60);
@@ -18,27 +19,31 @@ for(const scenario of selected){
  const boat=scenario==='pirate',road=['low','medium','high'].includes(scenario),w=boat?createBoat():road?createWorld('traffic',160,scenario):createCourse(scenario,'medium',160),latencies=[];
  if(boat)w.time=5;
  let command=boat?{sail:0}:road?{lane:1,throttle:'COAST'}:{throttle:0,brake:0,steer:0};
+ const controller=new AbortController();let weapon=null;
+ const combat=createCombatPilot(client,()=>w,controller.signal,a=>{weapon=a;},e=>console.error(JSON.stringify({scenario,weapon_error:e.message})));
  const started=performance.now();let last=started;
  function advance(dt){
   if(boat)stepBoat(w,dt,command);
   else if(road)while(dt>0){const d=Math.min(dt,1/120);stepWorld(w,d,command.lane,command.throttle);dt-=d;}
-  else stepCourse(w,dt,command);
+  else{stepCourse(w,dt,{...command,item:!!weapon?.item,itemTarget:weapon?.target});weapon=null;}
  }
  // Real-time is the default: the previous actuators remain applied while HTTP
  // is pending. Fixed-step mode is only for reproducible policy diagnostics.
- const timer=fixed?null:setInterval(()=>{const now=performance.now();advance((now-last)/1000);last=now;},8);
+ const timer=fixed?null:setInterval(()=>{const now=performance.now();advance((now-last)/1000);last=now;combat.tick();},8);
  try{
   for(let i=0;i<steps&&!w.finished&&(fixed||performance.now()-started<seconds*1000);i++){
    const state=boat?boatState(w):road?drivingState(w):courseState(w);state.steering_control=boat?'rudder':road?'lane_change':'direct_wheel';
-   const r=await client.infer(state,boat?boatQuestions:road?drivingQuestions:modeQuestions(scenario));latencies.push(r.ms);
-   command=boat?decodeBoat(r.answers):road?{lane:['LEFT','CENTER','RIGHT'].indexOf(r.answers.lane.choice),throttle:r.answers.throttle.choice}:decodeControls(r.answers);
+   const helm=boat?boatContract(w):null;
+   const r=!boat&&!road?await inferDriving(client,w,controller.signal):await client.infer(helm?.state||state,helm?.questions||drivingQuestions,controller.signal);latencies.push(r.ms);
+   command=!boat&&!road?r.command:boat?decodeBoat(r.answers):{lane:['LEFT','CENTER','RIGHT'].indexOf(r.answers.lane.choice),throttle:r.answers.throttle.choice};
+   combat.tick();
    w.reactionSeconds=fixed?.2:r.ms/1000;
    if(fixed)advance(.2);
    w.recentControls=[...(w.recentControls||[]),{at:+w.time.toFixed(2),command,speed_kmh:Math.round(w.speed*3.6),contacts:w.hits}].slice(-2);
-   if(process.env.JEV_DRIVE_TRACE==='1'&&i%10===0)console.log(JSON.stringify({scenario,step:i,speed:w.speed,position:[w.x,w.z],target:state.target,controls:boat||road?r.answers:decodeControls(r.answers)}));
+   if(process.env.JEV_DRIVE_TRACE==='1'&&i%5===0)console.log(JSON.stringify({scenario,step:i,speed:w.speed,position:[w.x,w.z],target:state.target,controls:command}));
 
   }
   const sorted=[...latencies].sort((a,b)=>a-b);
-  console.log(JSON.stringify({scenario,ok:true,timing:fixed?'fixed-step':'real-time',wall_seconds:+((performance.now()-started)/1000).toFixed(1),decisions:latencies.length,simulated_seconds:+w.time.toFixed(1),distance_m:+w.distance.toFixed(1),collisions:w.hits,finished:w.finished,gates:w.gate,missed:w.missed,lap:w.lap,violations:w.violations,hull:w.hull,disabled:w.disabled,shots:w.shots,items:w.itemCount,items_used:w.itemsUsed,recovery_assists:w.recovery?.assists,median_ms:Math.round(sorted[Math.floor(sorted.length/2)]),p95_ms:Math.round(sorted[Math.min(sorted.length-1,Math.floor(sorted.length*.95))])}));
- }catch(e){console.error(JSON.stringify({scenario,ok:false,completed:latencies.length,error:e.message}));process.exitCode=1;break;}finally{clearInterval(timer);}
+  console.log(JSON.stringify({scenario,ok:true,outcome:w.failed?'lost':w.finished?'won':'sampled',end_reason:w.endReason,timing:fixed?'fixed-step':'real-time',wall_seconds:+((performance.now()-started)/1000).toFixed(1),decisions:latencies.length,simulated_seconds:+w.time.toFixed(1),distance_m:+w.distance.toFixed(1),collisions:w.hits,finished:w.finished,gates:w.gate,missed:w.missed,lap:w.lap,violations:w.violations,hull:w.hull,disabled:w.disabled,shots:w.shots,items:w.itemCount,items_used:w.itemsUsed,recovery_assists:w.recovery?.assists,median_ms:Math.round(sorted[Math.floor(sorted.length/2)]),p95_ms:Math.round(sorted[Math.min(sorted.length-1,Math.floor(sorted.length*.95))])}));
+ }catch(e){console.error(JSON.stringify({scenario,ok:false,completed:latencies.length,error:e.message}));process.exitCode=1;break;}finally{controller.abort();clearInterval(timer);}
 }

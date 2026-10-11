@@ -101,3 +101,14 @@ export function manoeuvrePreview(w,objects,edge){
  }
  return {columns:['gear','wheel','clear_m','end_dx','end_dz'],arcs:out};
 }
+// Distances to the same collision envelope used by physics, in car coordinates.
+// No recommended route or selected action: these are short range-finder rays.
+export function boundaryClearance(w,edge){
+ const result={};
+ for(const [name,offset]of Object.entries({front:0,rear:Math.PI,left:-Math.PI/2,right:Math.PI/2})){
+  const h=w.heading+offset;let d=0;
+  while(d<100&&!edge({x:w.x+Math.sin(h)*(d+.25),z:w.z-Math.cos(h)*(d+.25)}))d+=.25;
+  result[name]=round(d);
+ }
+ return result;
+}

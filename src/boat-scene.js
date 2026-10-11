@@ -5,7 +5,7 @@ import {batchBoxes} from './render-batch.js';
 
 export function createBoatScene(canvas,mapCanvas){
  const renderer=new T.WebGLRenderer({canvas,antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));renderer.shadowMap.enabled=false;renderer.shadowMap.type=T.PCFShadowMap;renderer.toneMapping=T.ACESFilmicToneMapping;
- const scene=new T.Scene(),camera=new T.PerspectiveCamera(50,1,.1,2500),a=createAssets({simple:true}),map=mapCanvas.getContext('2d');scene.background=new T.Color('#648ea0');scene.fog=new T.Fog('#bdb5b2',450,1600);
+ const scene=new T.Scene(),camera=new T.PerspectiveCamera(50,1,.3,24000),a=createAssets({simple:true}),map=mapCanvas.getContext('2d');scene.background=new T.Color('#648ea0');scene.fog=new T.Fog('#bdb5b2',450,1600);
 
  const sun=new T.DirectionalLight('#ffdda7',3.2);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-40,right:40,top:40,bottom:-40,near:1,far:200});sun.shadow.normalBias=.06;scene.add(sun,sun.target,new T.HemisphereLight('#bfdde9','#3e505b',1.5));
  const skyMaterial=new T.ShaderMaterial({side:T.BackSide,depthWrite:false,uniforms:{day:{value:0}},vertexShader:`varying vec3 direction;void main(){direction=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,fragmentShader:`varying vec3 direction;uniform float day;
@@ -14,7 +14,7 @@ export function createBoatScene(canvas,mapCanvas){
  void main(){vec3 d=normalize(direction);float y=max(0.,d.y);vec3 horizon=mix(vec3(.75,.48,.4),vec3(.69,.82,.87),day),zenith=mix(vec3(.12,.24,.39),vec3(.14,.37,.59),day);vec3 color=mix(horizon,zenith,sqrt(y));vec3 sunDir=normalize(vec3(-.5,.35,-.7));float s=max(0.,dot(d,sunDir));color+=vec3(1.,.68,.37)*(pow(s,600.)*2.+pow(s,12.)*.15);vec2 uv=d.xz/max(.15,y)*2.;float n=noise(uv)*.6+noise(uv*2.3)*.3+noise(uv*5.1)*.1;float clouds=smoothstep(.56,.77,n)*smoothstep(.03,.25,y);color=mix(color,vec3(.85,.79,.74),clouds*.5);gl_FragColor=vec4(color,1.);
  #include <tonemapping_fragment>
  #include <colorspace_fragment>
- }`});const sky=new T.Mesh(new T.SphereGeometry(1800,32,16),skyMaterial);scene.add(sky);
+ }`});const sky=new T.Mesh(new T.SphereGeometry(20000,32,16),skyMaterial);scene.add(sky);
 
  const woodTex=a.texture('wood',(c,s)=>{c.fillStyle='#68482d';c.fillRect(0,0,s,s);for(let y=0;y<s;y+=16){c.fillStyle=y%32?'#805438':'#a27445';c.fillRect(0,y,s,14);c.strokeStyle='#402b22';c.beginPath();c.moveTo(0,y+14);c.lineTo(s,y+14);c.stroke();for(let x=0;x<s;x+=43){c.fillStyle='#2a2724';c.fillRect(x+(y%32),y+3,2,2);c.strokeStyle='#bd966344';c.beginPath();c.moveTo(x,y+5);c.bezierCurveTo(x+8,y,x+26,y+13,x+40,y+6);c.stroke();}}});
  const wood=a.material('wood',{color:'#ba9566',roughness:.7,map:woodTex}),hullMat=a.material('hull',{color:'#35281f',roughness:.48,clearcoat:.35}),gold=a.material('brass',{color:'#c39850',metalness:.8,roughness:.3}),ropeMat=a.material('rope',{color:'#b7a384',roughness:1}),cloth=a.material('sail',{color:'#d6c3a0',side:T.DoubleSide,roughness:.96}),black=a.material('iron',{color:'#25272a',metalness:.8,roughness:.4});
@@ -36,6 +36,13 @@ export function createBoatScene(canvas,mapCanvas){
  }
  const player=ship();batchBoxes(player);scene.add(player);const captain=a.person(0,true);captain.scale.setScalar(1.18);player.add(captain);
  const beach=new T.Group();scene.add(beach);const sand=a.mesh(beach,new T.SphereGeometry(1,48,20),a.material('sand',{color:'#c6ad80',roughness:1}),-20,-2,65);sand.scale.set(100,5,40);
+ const island=new T.Group();scene.add(island);
+ const shore=a.mesh(island,new T.SphereGeometry(1,32,12),a.material('island-sand',{color:'#d8bd84',roughness:1,fog:false}),0,-4,0);shore.scale.set(325,18,300);
+ for(const [x,z,r,h]of [[-75,-35,210,620],[120,-70,145,320],[-190,25,110,180]]){
+  const geo=new T.ConeGeometry(r,h,24,8),pos=geo.attributes.position;
+  for(let i=0;i<pos.count;i++){const px=pos.getX(i),py=pos.getY(i),pz=pos.getZ(i),n=1+.12*Math.sin(px*.036+pz*.017)*Math.cos(py*.023);pos.setXYZ(i,px*n,py,pz*n);}
+  geo.computeVertexNormals();a.mesh(island,geo,a.material('island-rock',{color:'#536955',roughness:1,fog:false}),x,h/2+8,z);
+ }
  for(let z=8;z<50;z+=2){a.rounded(beach,0,1.1,z,4,.25,1.92,wood);for(const x of [-1.6,1.6])spar(beach,[x,-1,z],[x,1.2,z],.13,wood);}
  for(let i=0;i<9;i++){const x=-85+i*17,z=70+Math.sin(i*2)*12,h=9+i%3;const trunk=new T.CatmullRomCurve3([new T.Vector3(x,1,z),new T.Vector3(x+1,h*.6,z),new T.Vector3(x+2,h,z)]);a.mesh(beach,new T.TubeGeometry(trunk,12,.24,8,false),wood);for(let j=0;j<7;j++){const theta=j/7*Math.PI*2,leaf=new T.Shape();leaf.moveTo(0,0);leaf.quadraticCurveTo(1,2,.1,5);leaf.quadraticCurveTo(-1,2,0,0);const m=a.mesh(beach,new T.ShapeGeometry(leaf,12),a.material('palm',{color:'#3c6545',side:T.DoubleSide,roughness:1}),x+2,h,z);m.rotation.set(-.9,theta,Math.sin(theta)*.5);}}
  const waveShader=`uniform float time;uniform vec4 patches[18];
@@ -50,8 +57,9 @@ export function createBoatScene(canvas,mapCanvas){
    void main(){vec4 w=modelMatrix*vec4(position,1.);w.y=wave(w.xz);p=w.xyz;normalW=normalize(vec3((wave(w.xz-vec2(.4,0))-wave(w.xz+vec2(.4,0)))/.8,1.,(wave(w.xz-vec2(0,.4))-wave(w.xz+vec2(0,.4)))/.8));gl_Position=projectionMatrix*viewMatrix*w;}`,
   fragmentShader:`varying vec3 p;varying vec3 normalW;uniform vec3 eye;uniform float day;uniform float time;
    void main(){
-    vec2 v=p.xz;float fine=sin(v.x*2.7+time)*cos(v.y*3.1-time)*.016;
-    vec3 n=normalize(normalW+vec3(fine,0.,-fine));
+    vec2 v=p.xz;float warp=sin(v.x*.19+v.y*.12-time*.3);
+    vec2 ripple=vec2(sin(v.x*1.3+v.y*.9+warp-time*1.7)+sin(v.x*3.1-v.y*1.1+time*2.3)*.4,sin(v.x*.8-v.y*1.4+warp-time*1.1)+sin(v.y*3.7+time*1.9)*.3)*.045*(1.-smoothstep(60.,300.,length(eye-p)));
+    vec3 n=normalize(normalW+vec3(ripple.x,0.,ripple.y));
     vec3 e=normalize(eye-p),l=normalize(vec3(-.5,.7,.4));float fres=pow(1.-max(0.,dot(n,e)),4.);
     vec3 deep=mix(vec3(.009,.095,.14),vec3(.015,.16,.21),day),sky=mix(vec3(.67,.39,.39),vec3(.53,.73,.82),day);
     float light=pow(max(dot(reflect(-l,n),e),0.),180.),foam=smoothstep(.8,1.4,p.y)*.32;
@@ -61,6 +69,9 @@ export function createBoatScene(canvas,mapCanvas){
     #include <colorspace_fragment>
    }`
  });
+ const farWaterMaterial=waterMaterial.clone();farWaterMaterial.uniforms=waterMaterial.uniforms;
+ farWaterMaterial.vertexShader='varying vec3 p;varying vec3 normalW;void main(){vec4 w=modelMatrix*vec4(position,1.);p=w.xyz;normalW=vec3(0.,1.,0.);gl_Position=projectionMatrix*viewMatrix*w;}';
+ const distantSea=a.mesh(scene,new T.PlaneGeometry(50000,50000),farWaterMaterial,0,-2,0);distantSea.rotation.x=-Math.PI/2;
  const waterGeo=new T.PlaneGeometry(900,900,72,72);waterGeo.rotateX(-Math.PI/2);const water=new T.Mesh(waterGeo,waterMaterial);scene.add(water);
  const police=new Map(),balls=[],bursts=[],foam=[],hazards=[];
  function policeBoat(variant){const g=new T.Group(),white=a.material('police-white',{color:'#e0e4df',metalness:.2,roughness:.28,clearcoat:1}),glass=a.material('police-glass',{color:'#102939',metalness:.7,roughness:.1});a.loft(g,[[-5,.1,.5,.15],[-3,1.2,.25,.9],[2,1.5,.3,1],[4,1.2,.35,.9]],white);a.rounded(g,0,1.15,.4,2.25,.2,5.5,white);a.rounded(g,0,2,.7,1.85,1.7,2.7,glass,.25);a.rounded(g,0,2.9,.7,2.2,.12,3,white);for(const x of [-.65,.65])a.rounded(g,x,3.05,.7,.8,.15,.32,a.glow(x<0?'#318cff':'#ff334b'));for(const x of [-1.4,1.4])a.rounded(g,x,.7,1,.07,.28,5,a.material('navy',{color:'#16384d',roughness:.4}));spar(g,[0,2.9,1],[0,4.4,1],.025,a.metal());if(variant===1)a.rounded(g,0,1,3,1.8,.7,1.6,black);if(variant===2){const radar=a.mesh(g,new T.CylinderGeometry(.7,.7,.12,20),white,0,3.7,1);spar(g,[0,2.9,1],[0,3.7,1],.06,a.metal());}return g;}
@@ -70,12 +81,12 @@ export function createBoatScene(canvas,mapCanvas){
  const foamTex=a.texture('foam',(c,s)=>{const gradient=c.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);gradient.addColorStop(0,'#ffffff22');gradient.addColorStop(.35,'#ffffff77');gradient.addColorStop(1,'#ffffff00');c.fillStyle=gradient;c.fillRect(0,0,s,s);});
  const foamGeo=new T.PlaneGeometry(1,1),foamMat=new T.MeshBasicMaterial({map:foamTex,color:'#d4edf1',transparent:true,opacity:.12,depthWrite:false,side:T.DoubleSide});for(let i=0;i<52;i++){const m=new T.Mesh(foamGeo,foamMat.clone());m.rotation.x=-Math.PI/2;scene.add(m);foam.push(m);}foamMat.dispose();
  batchBoxes(beach);const target=new T.Vector3();let ready=false,worldRef;
- function setWorld(w){worldRef=w;ready=false;for(const m of police.values()){scene.remove(m);m.traverse(n=>n.geometry?.dispose());}police.clear();for(const p of w.police){const m=policeBoat(p.variant);scene.add(m);police.set(p.id,m);}for(const m of hazards){scene.remove(m);m.geometry.dispose();m.material.dispose();}hazards.length=0;for(const h of w.waves){const m=new T.Mesh(new T.RingGeometry(h.radius-.4,h.radius,48),new T.MeshBasicMaterial({color:'#edc77e',transparent:true,opacity:.24,side:T.DoubleSide,depthWrite:false}));m.rotation.x=-Math.PI/2;m.position.set(h.x,.7,h.z);scene.add(m);hazards.push(m);}}
+ function setWorld(w){worldRef=w;ready=false;island.position.set(w.island.x,0,w.island.z);for(const m of police.values()){scene.remove(m);m.traverse(n=>n.geometry?.dispose());}police.clear();for(const p of w.police){const m=policeBoat(p.variant);scene.add(m);police.set(p.id,m);}for(const m of hazards){scene.remove(m);m.geometry.dispose();m.material.dispose();}hazards.length=0;for(const h of w.waves){const m=new T.Mesh(new T.RingGeometry(h.radius-.4,h.radius,48),new T.MeshBasicMaterial({color:'#edc77e',transparent:true,opacity:.24,side:T.DoubleSide,depthWrite:false}));m.rotation.x=-Math.PI/2;m.position.set(h.x,.7,h.z);scene.add(m);hazards.push(m);}}
  function resize(){const r=canvas.getBoundingClientRect();renderer.setSize(Math.max(1,r.width),Math.max(1,r.height),false);camera.aspect=Math.max(1,r.width)/Math.max(1,r.height);camera.updateProjectionMatrix();}const observer=new ResizeObserver(resize);observer.observe(canvas);
  function float(m,x,z,h,t){const fx=Math.sin(h)*2,fz=-Math.cos(h)*2,rx=Math.cos(h)*2,rz=Math.sin(h)*2;m.position.set(x,waterHeight(worldRef,x,z)*.8,z);m.rotation.set((waterHeight(worldRef,x+fx,z+fz)-waterHeight(worldRef,x-fx,z-fz))*.12,-h,(waterHeight(worldRef,x+rx,z+rz)-waterHeight(worldRef,x-rx,z-rz))*.12);}
  function render(w,{view='overhead',realistic=false}={}){
-  if(worldRef!==w)setWorld(w);water.position.set(w.x,0,w.z);waterMaterial.uniforms.time.value=w.time;waterMaterial.uniforms.day.value=realistic?1:0;waterMaterial.uniforms.patches.value.forEach((p,i)=>{const v=w.waves[i];p.set(v?.x||0,v?.z??99999,v?.radius||1,0);});scene.background.set(realistic?'#8db4c6':'#708294');scene.fog.color.set(realistic?'#b6cbd1':'#b7a4a3');
-  sky.position.copy(camera.position);skyMaterial.uniforms.day.value=realistic?1:0;
+  if(worldRef!==w)setWorld(w);water.position.set(w.x,0,w.z);waterMaterial.uniforms.time.value=w.time;waterMaterial.uniforms.day.value=realistic?1:.65;waterMaterial.uniforms.patches.value.forEach((p,i)=>{const v=w.waves[i];p.set(v?.x||0,v?.z??99999,v?.radius||1,0);});scene.background.set(realistic?'#8db4c6':'#708294');scene.fog.color.set(realistic?'#b6cbd1':'#b7a4a3');
+  sky.position.copy(camera.position);skyMaterial.uniforms.day.value=realistic?1:.65;
   float(player,w.x,w.z,w.heading,w.time);beach.visible=w.z>-500;
   const firing=w.time-w.fireAt,run=firing<2.5?Math.sin(Math.min(1,firing/1.25)*Math.PI):0;
   if(w.time<5){captain.position.set(0,1.2+Math.sin(Math.max(0,w.time-3.5)/1.5*Math.PI)*2.5,32-w.time*5.6);captain.rotation.y=0;a.animatePerson(captain,w.time,1.8);}
@@ -85,11 +96,12 @@ export function createBoatScene(canvas,mapCanvas){
   balls.forEach((m,i)=>{const b=w.balls[i];m.visible=!!b;if(b)m.position.set(b.x,b.y,b.z);});
   bursts.forEach((g,i)=>{const b=w.bursts[i];g.visible=!!b;if(!b)return;const age=w.time-b.at;g.position.set(b.x,0,b.z);g.children.forEach((m,j)=>{const angle=j*2.4,r=age*(1.5+j%4);m.position.set(Math.cos(angle)*r,Math.max(0,age*(6+j%3)-age*age*3),Math.sin(angle)*r);m.scale.setScalar((b.type==='wreck'?2:b.type==='fire'?1.2:.6)*(1+age*.3));m.material.color.set(b.type!=='water'?(age<.3?'#fff2bc':age<.9?'#ed762e':'#454950'):'#cfecf3');m.material.opacity=Math.max(0,1-age/3);});});
   foam.forEach((m,i)=>{const p=w.trail[i];m.visible=!!p&&w.speed>1;if(p){const age=w.time-p.at;m.position.set(p.x,waterHeight(w,p.x,p.z)+.08,p.z);m.rotation.z=p.heading;m.scale.set(6+age*2,3+age*.8,1);m.material.opacity=Math.max(0,.18-age*.028);}});
-  hazards.forEach((m,i)=>m.position.y=seaHeight(w.waves[i].x,w.waves[i].z,w.time)+.15);
+  hazards.forEach((m,i)=>{const p=w.waves[i];m.position.set(p.x,seaHeight(p.x,p.z,w.time)+.15,p.z);});
   const f={x:Math.sin(w.heading),z:-Math.cos(w.heading)},cam=view==='overhead'?new T.Vector3(w.x,53,w.z+25):view==='hood'?new T.Vector3(w.x-f.x*5,6,w.z-f.z*5):new T.Vector3(w.x-f.x*28,17,w.z-f.z*28),aim=new T.Vector3(w.x,1,w.z-8);
-  if(w.time<5){cam.set(-12,8,45-w.time*4);aim.set(0,2,32-w.time*5.6);}
+  if(w.time<5){const t=Math.max(0,Math.min(1,(w.time-1.5)/2)),blend=t*t*(3-2*t);cam.set(-12,12-blend*4,45-w.time*4);aim.set(w.island.x,150,w.island.z).sub(cam).normalize().multiplyScalar(60).add(cam).lerp(new T.Vector3(0,2,32-w.time*5.6),blend);}
   if(!ready){camera.position.copy(cam);target.copy(aim);ready=true;}else{camera.position.lerp(cam,.09);target.lerp(aim,.1);}camera.lookAt(target);waterMaterial.uniforms.eye.value.copy(camera.position);sun.position.set(w.x-45,80,w.z+45);sun.target.position.set(w.x,0,w.z);renderer.render(scene,camera);canvas.dataset.drawCalls=renderer.info.render.calls;canvas.dataset.triangles=renderer.info.render.triangles;
   map.fillStyle='#0b2735';map.fillRect(0,0,160,160);map.fillStyle='#edc77e';for(const p of w.waves)if(Math.hypot(p.x-w.x,p.z-w.z)<160){map.beginPath();map.arc(80+(p.x-w.x)*.5,100+(p.z-w.z)*.5,p.radius*.5,0,Math.PI*2);map.fill();}map.fillStyle='#6da9fb';for(const p of w.police)if(p.hull>0)map.fillRect(78+(p.x-w.x)*.5,98+(p.z-w.z)*.5,4,4);map.save();map.translate(80,100);map.rotate(w.heading);map.fillStyle='#f8d496';map.beginPath();map.moveTo(0,-8);map.lineTo(-4,6);map.lineTo(4,6);map.fill();map.restore();
+  const bearing=Math.atan2(w.island.x-w.x,w.z-w.island.z);map.save();map.translate(80+Math.sin(bearing)*65,80-Math.cos(bearing)*65);map.rotate(bearing);map.fillStyle='#a4e79b';map.beginPath();map.moveTo(0,-6);map.lineTo(-4,4);map.lineTo(4,4);map.fill();map.restore();
  }
  return {setWorld,render,resize,dispose(){observer.disconnect();sun.shadow.dispose();const gs=new Set(),ms=new Set();scene.traverse(o=>{if(o.geometry)gs.add(o.geometry);if(o.material)ms.add(o.material);});for(const g of gs)g.dispose();for(const m of ms)if(!a.materials.has(m))m.dispose();a.dispose();renderer.dispose();}};
 }
