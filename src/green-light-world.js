@@ -127,7 +127,10 @@ export function stepGreenWorld(w,dt,input){
  if(w.time>=w.nextSweepChange){w.sweepTarget=Math.random()<.25?2.2+Math.random()*1.8:4+Math.sqrt(Math.random())*4;w.nextSweepChange=w.time+(p.sprinting?.9+Math.random()*1.3:2+Math.random()*2);}
  w.sweepPeriod+=(w.sweepTarget-w.sweepPeriod)*(1-Math.exp(-dt/.35));
  // Linger over the yard, not over a tracked person. Stationary players stay invisible.
- const facing=clamp((-Math.cos(w.cameraYaw)+.22)/.28,0,1),linger=facing*facing*(3-2*facing);
+ // Ease into the slow pass only in the 12 degrees before the central yard
+ // enters the 38-degree half-FOV; do not grant a whole sideways slow sweep.
+ const fromYard=Math.abs(wrap(w.cameraYaw-Math.PI))*180/Math.PI;
+ const facing=clamp((50-fromYard)/12,0,1),linger=facing*facing*(3-2*facing);
  w.cameraPeriod=w.sweepPeriod+((w.variableSweep?28:sweepSeconds)-w.sweepPeriod)*linger;
  const turn=dt/w.cameraPeriod;w.cameraTurns+=turn;w.cameraYaw=wrap(w.cameraYaw+turn*2*Math.PI);observe(w);
  if(p.moving){w.steps+=dt;if(w.steps>.72/sprint){w.steps=0;w.events.push('step');}}

@@ -7,6 +7,7 @@ import {canvasLayout,canvasBatches,paintState} from '../src/paint-canvas.js';
 import {drivingState,drivingQuestions} from '../src/race-physics.js';
 import {createCourse} from '../src/race-course.js';
 import {drivingContract} from '../src/driving-policy.js';
+import {createArcadeKart,arcadeKartState,kartQuestions} from '../src/arcade-kart.js';
 import {createBoat,boatContract} from '../src/boat-physics.js';
 import {presets,makeQuestions} from '../src/chat-engine.js';
 const layout=canvasLayout('classic'),pixels=[...canvasBatches(layout,'Head / Base / Front')][0];
@@ -14,7 +15,8 @@ const palette={SKIN:'#dca477',HAIR:'#4a3027',WHITE:'#f1eadc',BLACK:'#222334'};
 const cases=[
  ['playground',{message:'My new laptop arrived broken. I need a replacement today.'},{route:choice('Route the ticket.',['RETURNS','SHIPPING','GENERAL']),urgent:{type:'noul',instructions:'Is this time-sensitive?'},severity:{type:'score',instructions:'How serious is the issue?',criteria:['Low','Medium','High']}}],
  ['drive',drivingState({x:1,speed:20,cars:[{lane:1,z:30,speed:10}]}),drivingQuestions],
- ...['parking','slalom','kart','city'].map(mode=>{const c=drivingContract(createCourse(mode));return ['drive-'+mode,c.state,c.questions];}),
+ ...['parking','slalom','city'].map(mode=>{const c=drivingContract(createCourse(mode));return ['drive-'+mode,c.state,c.questions];}),
+ ['drive-kart',arcadeKartState(createArcadeKart()),kartQuestions],
  ...[boatContract(createBoat())].map(c=>['drive-pirate',c.state,c.questions]),
  ['skin-paint',paintState(layout,new Uint8ClampedArray(64*64*4),pixels,'Paint a friendly face with dark hair.',palette),Object.fromEntries(pixels.map(p=>['p'+p.index,choice('Choose the color at x='+p.x+', y='+p.y+', '+p.region+'.',Object.keys(palette))]))],
  ['tornado',{slug:'synthetic-market',yes_bid:.60,yes_ask:.62,previous_yes_mid:.55},{classification:choice('Compare the current midpoint with the previous midpoint. Classify direction only.',['UP','DOWN','FLAT'])}],

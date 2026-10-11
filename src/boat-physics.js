@@ -1,6 +1,15 @@
 import {clamp,choice} from './core.js';
 
 export const boardingSeconds=3.5;
+export const panicCooldownSeconds=90;
+export function panicAvailable(w){return !w.finished&&w.time>=5&&w.time>=(w.panicReadyAt||0)&&w.police.some(p=>p.hull>0&&p.boarding>=boardingSeconds-1&&p.boarding<boardingSeconds&&Math.hypot(p.x-w.x,p.z-w.z)<10);}
+export function panicContract(w){
+ if(!panicAvailable(w))return null;
+ const remaining=boardingSeconds-Math.max(...w.police.filter(p=>p.hull>0).map(p=>p.boarding||0)),at=w.time;
+ return {state:{event:'Final-second boarding emergency',seconds_to_defeat:+remaining.toFixed(3),action:'Fire a radial cannon volley to interrupt boarding. Physical projectiles, no invulnerability.',cooldown_seconds:panicCooldownSeconds},
+  questions:{panic_fire:{type:'noul',instructions:'Fire the available emergency all-direction cannon volley NOW to interrupt imminent boarding defeat? It is available only during this final second and then has a 90-second cooldown.'}},
+  valid:current=>current.time-at<1&&panicAvailable(current)};
+}
 export const seaWaves=[[.52,.055,.027,1.1],[.25,-.09,.06,1.7],[.12,.18,.12,2.4]];
 export function seaHeight(x,z,t){return seaWaves.reduce((v,[a,kx,kz,s])=>v+a*Math.sin(x*kx+z*kz-t*s),0);}
 export function waterHeight(w,x,z){const scale=1+w.waves.reduce((n,p)=>n+Math.max(0,1-Math.hypot(x-p.x,z-p.z)/p.radius)**2*3,0);return seaHeight(x,z,w.time)*scale;}
@@ -65,12 +74,19 @@ export function fireBroadside(w,side){
  for(const offset of [-2.5,0,2.5])w.balls.push({x:w.x+Math.cos(w.heading)*side*2.4+Math.sin(w.heading)*offset,z:w.z+Math.sin(w.heading)*side*2.4-Math.cos(w.heading)*offset,y:2,vx:Math.sin(angle)*65+w.speed*Math.sin(w.heading),vz:-Math.cos(angle)*65-w.speed*Math.cos(w.heading),vy:8,age:0});
  return true;
 }
+export function firePanic(w){
+ if(!panicAvailable(w))return false;
+ w.panicReadyAt=w.time+panicCooldownSeconds;w.panicUses=(w.panicUses||0)+1;w.fireAt=w.time;w.fireSide=0;w.shots++;
+ for(let i=0;i<32;i++){const angle=w.heading+i*Math.PI/16;w.balls.push({x:w.x+Math.sin(angle)*2.4,z:w.z-Math.cos(angle)*2.4,y:2,vx:Math.sin(angle)*75+w.speed*Math.sin(w.heading),vz:-Math.cos(angle)*75-w.speed*Math.cos(w.heading),vy:2,age:0});}
+ burst(w,w.x,w.z,'fire');return true;
+}
 export function stepBoat(w,dt,command={}){
  if(w.finished||!Number.isFinite(dt)||dt<=0)return;
  dt=Math.min(dt,1);
  while(dt>1e-8&&!w.finished){const d=Math.min(dt,1/120);dt-=d;w.time+=d;w.flash=Math.max(0,w.flash-d);w.reloads.left=Math.max(0,w.reloads.left-d);w.reloads.right=Math.max(0,w.reloads.right-d);w.cooldown=Math.max(w.reloads.left,w.reloads.right);
   if(w.time<5)continue;
   replenishSea(w);
+  if(command.panic)firePanic(w);
   const steer=clamp(Number(command.steer)||0,-1,1),power=clamp(command.sail??(command.pedal==='FULL'?1:command.pedal==='REEF'?.25:0),0,1);w.controls={steer,sail:power,port:!!command.port,starboard:!!command.starboard};
   w.speed=clamp(w.speed+(power*3.6-.065*w.speed-.006*w.speed*w.speed-(1-power)*1.4)*d,0,Math.min(22,w.limit));
   const targetYaw=steer*.48*Math.min(1,w.speed/5);w.yaw+=(targetYaw-w.yaw)*Math.min(1,d*2);w.heading=wrap(w.heading+w.yaw*d);

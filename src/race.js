@@ -2,6 +2,8 @@ import {$,el,Run,delay} from './core.js';
 import {createWorld,stepWorld,drivingQuestions,drivingState} from './race-physics.js';
 import {freeCourses,createCourse,stepCourse,courseState,recoverCourse} from './race-course.js';
 import {createRaceScene} from './race-scene.js';
+import {createArcadeScene} from './arcade-scene.js';
+import {createArcadeKart,stepArcadeKart,arcadeKartState,kartQuestions} from './arcade-kart.js';
 import {createBoat,stepBoat,boatState,boatContract,decodeBoat} from './boat-physics.js';
 import {createBoatScene} from './boat-scene.js';
 import {initManualControls} from './manual-controls.js';
@@ -11,26 +13,28 @@ import {createCombatPilot} from './combat-policy.js';
 export {drivingQuestions,drivingState} from './race-physics.js';
 
 export function initRace(client,toast){
- const canvas=$('#race-canvas'),keys=new Set();
+ let canvas=$('#race-canvas');const keys=new Set();
  let roadView='chase';
  let view=null,world,mode='parked',run=null,visible=false,raf=0,last=0,target=1,throttle='COAST',command={steer:0,pedal:'COAST'},decisions=0,lastDecision=0,lastHud=0,peak=0;
  const manual=initManualControls($('#race-manual'),keys,()=>mode==='manual');
  let combat=null,weapon=null;
- const isFree=()=>freeCourses.has(world.course);
+ const isFree=()=>freeCourses.has(world.course)&&!world.arcade;
  const isBoat=()=>world.course==='pirate';
+ const rendererKind=course=>course==='pirate'?'boat':['traffic','race','kart'].includes(course)?'arcade':'free';
 
- function init3D(){if(view)return true;try{view=(isBoat()?createBoatScene:createRaceScene)(canvas,$('#race-map'));view.setWorld(world);return true;}catch(e){toast('WebGL2 unavailable: '+e.message);return false;}}
- function snapshot(){const state=isBoat()?boatState(world):isFree()?courseState(world):drivingState(world);state.control_period_seconds=world.reactionSeconds||.3;state.steering_control=isBoat()?'rudder':isFree()?'direct_wheel':'lane_change';return state;}
+ function init3D(){if(view)return true;try{view=(isBoat()?createBoatScene:rendererKind(world.course)==='arcade'?createArcadeScene:createRaceScene)(canvas,$('#race-map'));view.setWorld(world);return true;}catch(e){toast('Renderer unavailable: '+e.message);return false;}}
+ function snapshot(){const state=isBoat()?boatState(world):world.arcade?arcadeKartState(world):isFree()?courseState(world):drivingState(world);state.control_period_seconds=world.reactionSeconds||.3;state.steering_control=isBoat()?'rudder':isFree()?'direct_wheel':'lane_change';return state;}
  function reset(){
   const course=$('#race-course').value,density=$('#race-density').value;
-  const switchRenderer=!!world&&(world.course==='pirate')!==(course==='pirate');if(switchRenderer){view?.dispose();view=null;}
-  world=course==='pirate'?createBoat(density):freeCourses.has(course)?createCourse(course,density):createWorld(course,160,density);
+  const switchRenderer=!!world&&rendererKind(world.course)!==rendererKind(course);if(switchRenderer){view?.dispose();view=null;const fresh=canvas.cloneNode(false);canvas.replaceWith(fresh);canvas=fresh;}
+  world=course==='pirate'?createBoat(density):course==='kart'?createArcadeKart(density):freeCourses.has(course)?createCourse(course,density):createWorld(course,160,density);
   if(switchRenderer){if(course==='pirate'){roadView=$('#race-camera').value;$('#race-camera').value='overhead';}else $('#race-camera').value=roadView;}
 
-  world.recoveryAssist=$('#race-assist').checked;manual.reset(course);
+  world.recoveryAssist=$('#race-assist').checked;manual.reset(world.arcade?'kart-arcade':course);
+  canvas.setAttribute('aria-label',rendererKind(course)==='arcade'?'Arcade driving simulator':'3D driving simulator');
   target=1;throttle='COAST';command={steer:0,pedal:'COAST'};decisions=0;peak=0;
   $('#race-log').replaceChildren();$('#race-command').textContent='Ready';$('#race-latency').textContent='—';view?.setWorld(world);if(switchRenderer&&visible)init3D();
-  $('#race-assist').parentElement.hidden=!isFree();hud();
+  $('#race-assist').parentElement.hidden=!isFree();$('#race-camera').parentElement.hidden=rendererKind(course)==='arcade';hud();
  }
  function hud(){
   $('#race-mode').textContent=world.finished?(world.endReason||(world.failed?'FAILED':'FINISH')):isBoat()&&world.time>0&&world.time<5?'EMBARKING':mode==='parked'?(world.time?'PAUSED':'READY'):mode.toUpperCase();$('#race-speed').textContent=Math.round(world.speed*3.6);$('#race-distance').textContent=Math.round(world.distance);
@@ -51,13 +55,13 @@ export function initRace(client,toast){
  function log(text){$('#race-log').prepend(el('div',{},text));while($('#race-log').children.length>5)$('#race-log').lastChild.remove();}
  async function start(){
   stop();if(!init3D())return;if(world.finished)reset();const current=new Run();run=current;mode='jev';lastDecision=performance.now();throttle='COAST';command={steer:0,pedal:'COAST'};
-  resetDrivingPolicy(world);combat=createCombatPilot(client,()=>world,current.signal,a=>{weapon=a;log((world.item||'Item')+(a.target?' → '+a.target:''));},e=>log('Weapon · '+e.message));
+  resetDrivingPolicy(world);combat=createCombatPilot(client,()=>world,current.signal,a=>{weapon=a;log(a.panic?'Last stand':(world.item||'Item')+(a.target?' → '+a.target:''));},e=>log('Weapon · '+e.message));
   $('#race-start').disabled=true;$('#race-demo').disabled=true;$('#race-stop').disabled=false;let retry=0;
   try{while(!current.signal.aborted&&!world.finished){
    if(isBoat()&&world.time<5){lastDecision=performance.now();await delay(100,current.signal);continue;}
    const started=performance.now();let result;
 
-   try{const helm=isBoat()?boatContract(world):null;result=isFree()?await inferDriving(client,world,current.signal):await client.infer(helm?.state||snapshot(),helm?.questions||drivingQuestions,current.signal);retry=0;}
+   try{const helm=isBoat()?boatContract(world):null;result=isFree()?await inferDriving(client,world,current.signal):await client.infer(helm?.state||snapshot(),helm?.questions||(world.arcade?kartQuestions:drivingQuestions),current.signal);retry=0;}
    catch(e){if(!current.signal.aborted&&/^HTTP 429:/.test(e.message)&&retry<4){retry++;command={brake:1,steer:0,pedal:'REEF'};throttle='BRAKE';$('#race-command').textContent='Endpoint busy · braking';log('Retry '+retry+'/4');await delay(500*2**(retry-1),current.signal);continue;}throw e;}
    if(current.signal.aborted)break;const age=performance.now()-started;decisions++;world.reactionSeconds=+(Math.max(age,Number($('#race-interval').value))/1000*Number($('#race-timescale').value)).toFixed(2);
    if(age>4000){command={brake:1,steer:0,pedal:'REEF'};throttle='BRAKE';log('Stale command · brake');}
@@ -71,22 +75,23 @@ export function initRace(client,toast){
    $('#race-latency').textContent=Math.round(result.ms)+' ms';await delay(Math.max(0,Number($('#race-interval').value)-age),current.signal);
   }}catch(e){if(!current.signal.aborted){toast(e.message);log(e.message);}}finally{if(run===current)stop();}
  }
- function manualCommand(){const input=manual.read(world);if(!isBoat()&&!isFree()){target=input.lane;throttle=input.throttle;}else command=input;}
+ function manualCommand(){const input=manual.read(world);if(!isBoat()&&!isFree()){target=input.lane;throttle=input.throttle;weapon=input.item?{item:true}:null;}else command=input;}
 
  function tick(now){
-  if(!visible)return;const elapsed=now-last;let dt=Math.min(.08,elapsed/1000)||0;last=now;
+  if(!visible)return;const elapsed=now-last;let dt=Math.min(.25,elapsed/1000)||0;last=now;
   if(elapsed>0&&elapsed<500)canvas.dataset.frameMs=((Number(canvas.dataset.frameMs)||elapsed)*.95+elapsed*.05).toFixed(1);
   if(mode!=='parked'){
    dt*=Number($('#race-timescale').value);const stale=mode==='jev'&&(now-lastDecision)>4000;
    if(mode==='manual')manualCommand();const hits=world.hits;
-   if(isBoat())stepBoat(world,dt,stale?{steer:0,pedal:'COAST',fire:0}:command);
+   if(isBoat()){stepBoat(world,dt,stale?{steer:0,pedal:'COAST',fire:0}:{...command,panic:mode==='jev'?!!weapon?.panic:command.panic});weapon=null;}
+   else if(world.arcade){stepArcadeKart(world,dt,target,stale?'BRAKE':throttle,stale?{}:weapon||{});weapon=null;}
    else if(isFree()){stepCourse(world,dt,stale?{steer:0,brake:1}:mode==='jev'?{...command,item:!!weapon?.item,itemTarget:weapon?.target}:command);weapon=null;}
    else while(dt>0){const step=Math.min(dt,1/120);stepWorld(world,step,target,stale?'BRAKE':throttle);dt-=step;}
    peak=Math.max(peak,Math.abs(world.speed));if(world.hits>hits)log('Contact · '+world.hits);if(world.finished)stop();
    if(mode==='jev')combat?.tick();
   }
   if(now-lastHud>100){hud();lastHud=now;}
-  view?.render(world,{realistic:false,view:$('#race-camera').value});raf=requestAnimationFrame(tick);
+  view?.render(world,{realistic:false,view:rendererKind(world.course)==='arcade'?'chase':$('#race-camera').value});raf=requestAnimationFrame(tick);
  }
  $('#race-start').onclick=start;$('#race-stop').onclick=stop;$('#race-reset').onclick=()=>{stop();reset();};
  for(const id of ['#race-course','#race-density'])$(id).onchange=()=>{stop();reset();};
@@ -97,7 +102,7 @@ export function initRace(client,toast){
  const normalized=k=>k.length===1?k.toLowerCase():k;
  window.addEventListener('keydown',e=>{
   const range=e.target.matches?.('input[type="range"]'),editing=e.target.isContentEditable||['TEXTAREA','SELECT'].includes(e.target.tagName)||(e.target.tagName==='INPUT'&&!range);
-  if(visible&&mode==='manual'&&!editing&&!(range&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','a','d','w','s','r','q','e',' ','Shift'].includes(normalized(e.key))){e.preventDefault();keys.add(normalized(e.key));}
+  if(visible&&mode==='manual'&&!editing&&!(range&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','a','d','w','s','r','q','e','x',' ','Shift'].includes(normalized(e.key))){e.preventDefault();keys.add(normalized(e.key));}
  });
  window.addEventListener('keyup',e=>keys.delete(normalized(e.key)));window.addEventListener('blur',()=>manual.clear());
  document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();});

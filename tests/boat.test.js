@@ -1,7 +1,17 @@
 import {test,expect} from 'bun:test';
 import {createBoat,stepBoat,boatState,fireBroadside,seaHeight,seaWaves,waterHeight,boatQuestions,boatContract,decodeBoat} from '../src/boat-physics.js';
 import {validQuestions} from '../src/core.js';
+import {panicAvailable,panicContract,firePanic,boardingSeconds,panicCooldownSeconds} from '../src/boat-physics.js';
 const advance=(w,seconds,command={pedal:'FULL',steer:0})=>{for(let t=0;t<seconds;t+=1/60)stepBoat(w,1/60,command);};
+test('Last stand exists only in the final boarding second and revalidates before firing',()=>{
+ const w=createBoat();w.time=6;w.waves=[];const p={id:0,x:8,z:0,heading:0,speed:8,hull:3,boarding:1};w.police=[p];w.speed=8;
+ expect(panicContract(w)).toBeNull();expect(firePanic(w)).toBe(false);
+ p.boarding=boardingSeconds-.8;const contract=panicContract(w);expect(Object.keys(validQuestions(contract.questions))).toEqual(['panic_fire']);
+ expect(w.balls.length).toBe(0);expect(firePanic(w)).toBe(true);expect(w.balls.length).toBe(32);expect(firePanic(w)).toBe(false);expect(contract.valid(w)).toBe(false);
+ advance(w,.2,{sail:.5});expect(w.finished).toBe(false);expect(p.boarding).toBe(0);expect(w.disabled).toBe(1);
+ p.hull=3;p.boarding=3;p.x=w.x+8;p.z=w.z;w.time=w.panicReadyAt-.01;expect(panicAvailable(w)).toBe(false);w.time+=.02;expect(panicAvailable(w)).toBe(true);expect(panicCooldownSeconds).toBe(90);
+ p.boarding=0;expect(firePanic(w)).toBe(false);
+});
 test('Cannon questions appear only with a loaded bank and target in its arc',()=>{
  const w=createBoat();w.time=5;w.police=[{id:0,x:25,z:0,heading:0,speed:0,hull:3}];
  expect(Object.keys(boatContract(w).questions)).toEqual(['rudder','sail','starboard_fire']);

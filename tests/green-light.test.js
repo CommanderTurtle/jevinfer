@@ -23,6 +23,13 @@ test('Halfway progress or elapsed time enables repeated, smooth speed changes',(
   expect(w.sweepPeriod).toBeGreaterThanOrEqual(2.2);expect(w.sweepPeriod).toBeLessThanOrEqual(8);
  }
 });
+test('Fast return ends only twelve degrees before the yard enters view',()=>{
+ const period=degrees=>{const w=createGreenWorld();w.cameraYaw=degrees*Math.PI/180;stepGreenWorld(w,1/120,{});return w.cameraPeriod;};
+ expect(period(90)).toBe(6.5);expect(period(129)).toBe(6.5);
+ expect(period(136)).toBeGreaterThan(6.5);expect(period(136)).toBeLessThan(22);
+ expect(period(142)).toBeCloseTo(22,5);expect(period(218)).toBeCloseTo(22,5);
+ expect(period(231)).toBe(6.5);
+});
 test('Two actual unused camera passes retract the mount, regardless of speed',()=>{
  const w=createGreenWorld();w.turret.raised=true;w.turret.lift=1;w.cameraTurns=1.99;
  stepGreenWorld(w,1/60,{});expect(w.turret.raised).toBe(true);

@@ -1,7 +1,10 @@
 import {itemState} from './kart-items.js';
 import {courseState} from './race-course.js';
+import {arcadeKartState} from './arcade-kart.js';
+import {panicContract} from './boat-physics.js';
 // Weapon work never owns steering, pedals, or the recovery state machine.
 export function combatContract(w){
+ if(w.course==='pirate'){const p=panicContract(w);return p?{...p,decode:a=>({panic:a.panic_fire.noul>.5,item:false})}:null;}
  if(w.course!=='kart'||!w.item||w.finished)return null;
  const s=Math.sin(w.heading),c=Math.cos(w.heading),type=w.item,inventory=w.itemCount||0,at=w.time;
  const targets=w.objects.filter(o=>o.kind==='car').map(o=>{
@@ -16,8 +19,8 @@ export function combatContract(w){
  if(type==='SHIELD'&&!hazards.some(h=>h.owner!=='player'))return null;
  const questions={fire:{type:'noul',instructions:instructions[type]}};
  if(type==='RED_SHELL'&&eligible.length)questions.target={type:'choice',instructions:'Select the rival this homing shell should pursue. Prefer a nearby unshielded opponent ahead.',criteria:Object.fromEntries(eligible.map(t=>[t.id,`${t.range_m}m away; shield ${t.shielded}.`]))};
- const nav=courseState(w);
- return {state:{held_item:type,effect:effects[type],targets,speed_kmh:Math.round(w.speed*3.6),hazards,road_position:nav.observations.road_position,front_clearance_m:nav.observations.bumper_clearance_m.front,target_bearing_degrees:nav.target.bearing_degrees},questions,
+ const nav=w.arcade?arcadeKartState(w):courseState(w);
+ return {state:{held_item:type,effect:effects[type],targets,speed_kmh:Math.round(w.speed*3.6),hazards,...(w.arcade?{lanes:nav.lanes,control:nav.control}:{road_position:nav.observations.road_position,front_clearance_m:nav.observations.bumper_clearance_m.front,target_bearing_degrees:nav.target.bearing_degrees})},questions,
  decode(a){return {item:a.fire.noul>.5&&!(type==='RED_SHELL'&&!eligible.length),target:a.target?.choice};},
  valid:current=>!current.finished&&current.time-at<=1.5&&current.item===type&&(current.itemCount||0)===inventory};
 }
@@ -33,7 +36,7 @@ export function createCombatPilot(client,world,signal,fire,onError=()=>{}){
    const action=contract.decode(r.answers);
    const target=action.target?w.objects.find(o=>o.id===action.target):null;
    const reachable=target&&Math.hypot(target.x-w.x,target.z-w.z)<60&&(target.x-w.x)*Math.sin(w.heading)-(target.z-w.z)*Math.cos(w.heading)>0;
-   if(action.item&&(!action.target||reachable))fire(action,r);
+   if(action.panic||(action.item&&(!action.target||reachable)))fire(action,r);
   }).catch(e=>{if(!signal.aborted){nextAt=performance.now()+1000;onError(e);}}).finally(()=>{pending=false;});
  }};
 }
