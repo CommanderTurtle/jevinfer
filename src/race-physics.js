@@ -3,7 +3,7 @@ export const drivingQuestions={
  lane:choice('Select the safest absolute lane using visible clearance, closing speed and time to contact. If current lane is blocked, choose a clear neighboring lane. Do not cross an occupied intermediate lane or cut off a fast car behind. Prefer staying when safe. Observations beyond sensor range are unknown.',['LEFT','CENTER','RIGHT']),
  throttle:choice('Accelerate toward the speed limit when visible space is clear. Brake if closing gap is below stopping distance or collision is imminent. Coast approaching slower traffic. Do not assume unseen road beyond sensor range is clear.',['ACCELERATE','COAST','BRAKE'])
 };
-export function drivingState(w){const range=w.sensorRange||160;return {
+export function drivingState(w){const range=160;return {
  task:w.course==='race'?'Finish the 2 km race quickly without collisions.':'Navigate without collisions.',
  course:w.course,current_lane:['LEFT','CENTER','RIGHT'][Math.round(w.x)],lateral_position:w.x,
  speed_kmh:Math.round(w.speed*3.6),speed_limit_kmh:Math.round((w.limit||45)*3.6),lane_change_seconds:.65,sensor_range_m:range,rear_sensor_range_m:25,control_period_seconds:w.reactionSeconds||.3,stopping_distance_m:Math.round(w.speed*w.speed/18+w.speed*(w.reactionSeconds||.3)),
@@ -24,7 +24,7 @@ export function sweptContact(x0,z0,x1,z1,halfX=.53,halfZ=4.4){
  }return enter;
 }
 export function createWorld(course='traffic',limit=160,density='medium'){
- const spacing={low:90,medium:48,high:24}[density]||48;
+ const spacing={low:65,medium:36,high:19}[density]||48;
  const w={course,density,spacing,limit:limit/3.6,x:1,speed:0,distance:0,hits:0,time:0,finished:false,cars:[],nextId:0,flash:0,passed:0};
  for(let z=85,i=0;z<580;z+=spacing,i++)spawnObstacle(w,z,i);return w;
 }

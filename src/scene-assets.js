@@ -1,12 +1,12 @@
 import * as T from '../vendor/three.js';
 
 // All geometry and textures are generated locally; no model/texture downloads.
-export function createAssets(){
+export function createAssets({simple=false}={}){
  const materials=new Set(),textures=new Set(),cache=new Map();
- const material=(key,options)=>{key='material:'+key;if(!cache.has(key)){const m=new T.MeshPhysicalMaterial(options);cache.set(key,m);materials.add(m);}return cache.get(key);};
+ const material=(key,options)=>{key='material:'+key;if(!cache.has(key)){const {clearcoat,clearcoatRoughness,...standard}=options;const m=simple?new T.MeshStandardMaterial(standard):new T.MeshPhysicalMaterial(options);cache.set(key,m);materials.add(m);}return cache.get(key);};
  function texture(key,paint,size=256){key='texture:'+key;if(cache.has(key))return cache.get(key);const c=document.createElement('canvas');c.width=c.height=size;paint(c.getContext('2d'),size);const t=new T.CanvasTexture(c);t.colorSpace=T.SRGBColorSpace;t.wrapS=t.wrapT=T.RepeatWrapping;t.anisotropy=4;textures.add(t);cache.set(key,t);return t;}
  function mesh(parent,geo,mat,x=0,y=0,z=0){const m=new T.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;}
- function rounded(parent,x,y,z,w,h,d,mat,r=.08){return mesh(parent,new T.RoundedBoxGeometry(w,h,d,2,Math.min(r,w/3,h/3,d/3)),mat,x,y,z);}
+ function rounded(parent,x,y,z,w,h,d,mat,r=.08){return mesh(parent,simple?new T.BoxGeometry(w,h,d):new T.RoundedBoxGeometry(w,h,d,2,Math.min(r,w/3,h/3,d/3)),mat,x,y,z);}
  const metal=()=>material('chrome',{color:'#b5c2ca',metalness:.95,roughness:.22});
  const rubber=()=>material('rubber',{color:'#11141b',roughness:.88});
  const glow=color=>material('glow'+color,{color,emissive:color,emissiveIntensity:3,roughness:.28});

@@ -4,7 +4,7 @@ import {validQuestions} from '../src/core.js';
 const advance=(w,seconds,command={pedal:'FULL',steer:0})=>{for(let t=0;t<seconds;t+=1/60)stepBoat(w,1/60,command);};
 test('Boat boarding precedes motion; density and finite horizon are independent of model sequences',()=>{
  const w=createBoat('high');advance(w,4);expect(w.distance).toBe(0);advance(w,3);expect(w.distance).toBeGreaterThan(0);expect(w.police.length).toBe(6);
- w.police.push({id:50,x:9999,z:9999,hull:3,speed:12});expect(boatState(w).boats.length).toBeLessThan(7);expect(Object.keys(validQuestions(boatQuestions))).toEqual(['rudder','sail','cannons']);
+ w.police.push({id:50,x:9999,z:9999,hull:3,speed:12});expect(boatState(w).boats.length).toBeLessThan(7);expect(Object.keys(validQuestions(boatQuestions))).toEqual(['rudder','sail','port_fire','starboard_fire']);
 });
 test('Boat integrates consistently under different frame cadences and respects speed cap',()=>{
  const a=createBoat('low',60),b=createBoat('low',60);a.police=[];b.police=[];a.waves=[];b.waves=[];

@@ -47,3 +47,16 @@ pre{background:#090b0f;color:#e7ebf1}.raw-card pre{max-height:340px}
 @keyframes chat-entry{from{opacity:.2;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media(max-width:1000px){.lab-grid{grid-template-columns:minmax(0,1fr) 280px}main{padding:22px}.topbar{padding:0 15px;gap:10px}}
 @media(max-width:760px){.topbar{height:auto;padding:12px;gap:8px}.lab-grid,.play-grid{grid-template-columns:1fr}.lab-controls{display:flex;flex-direction:column}.paint-stage{position:static;min-height:300px;padding:15px}.race-stage{min-height:400px;height:55vh}.chat-filter-bar{padding:10px;gap:10px}.filter-chips{flex-basis:100%;order:2}main{padding:18px 12px}.page-title h1,.compact-title h1{font-size:23px}.chat-feed{height:300px}.topbar nav{overflow-x:auto}.tab{padding:8px 10px}}
+/* Shared human/model actuator display; no alternative manual physics. */
+.manual-panel{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:12px}
+.manual-panel h3{font-size:12px;margin:0;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.manual-axes{display:grid;gap:8px}.manual-axes label>span{display:flex;justify-content:space-between}
+.manual-axes output{font-family:var(--mono);color:var(--ink)}.manual-axes input{padding:0;accent-color:var(--pink)}
+.manual-panel .drive-pad{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.manual-panel button{white-space:normal;padding:8px 5px;font-size:11px;touch-action:none}
+.manual-panel kbd{display:block;font:9px var(--mono);opacity:.6;margin-top:3px}
+.manual-panel button[aria-pressed="true"]{background:#613c7b;color:#fff;border-color:#d79af1}
+[hidden]{display:none!important}
+#drive .stat-line{gap:12px;align-items:flex-start}
+#drive .stat-line>span{flex-shrink:0}
+#drive .stat-line>strong{text-align:right;min-width:0;overflow-wrap:anywhere}

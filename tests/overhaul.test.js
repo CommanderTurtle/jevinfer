@@ -51,6 +51,7 @@ test('Swept collision detects rapid lane crossings and high-speed longitudinal m
  expect(sweptContact(0,-30,0,30)).not.toBeNull();
  expect(sweptContact(-1,-30,-1,30)).toBeNull();
 });
+;
 test('Lane sensors distinguish alongside traffic from the next obstacle ahead',()=>{
  const state=drivingState({x:0,speed:0,cars:[{lane:0,z:-2,speed:20,kind:'car'},{lane:0,z:5,speed:0,kind:'barrier'}]});
  expect(state.lanes[0].alongside).toBe(true);expect(state.lanes[0].clearance_m).toBe(5);expect(state.lanes[0].blocked).toBe(true);

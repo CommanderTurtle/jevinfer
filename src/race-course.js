@@ -1,12 +1,10 @@
-import {clamp,choice} from './core.js';
+import {clamp} from './core.js';
+import {vehicleQuestions,vehicleStep,vehicleState,surroundings,manoeuvrePreview,resetRecovery} from './vehicle-controls.js';
+import {initItems,stepItems,itemState} from './kart-items.js';
 
 export const freeCourses=new Set(['parking','slalom','kart','city']);
-export const steeringValues={LEFT:-1,SLIGHT_LEFT:-.32,STRAIGHT:0,SLIGHT_RIGHT:.32,RIGHT:1};
-export const courseQuestions={
- steering:choice('Steer toward the route target: negative bearing is LEFT, positive bearing is RIGHT. STRAIGHT only when aligned (within about 3 degrees). SLIGHT steering for 3–12 degrees; stronger steering for larger angles. Avoid blocked space. Reverse flips steering effect.',Object.keys(steeringValues)),
- pedal:choice('Choose longitudinal control NOW. FORWARD accelerates from rest when the target is ahead and space is clear. COAST near recommended speed; BRAKE when above it or inside the final parking bay. BRAKE for a red/amber crossing or pedestrian. When stopped against an obstacle, steering alone cannot move the car: REVERSE if the rear is clear, then turn and drive forward. Also reverse if a nearby parking/slalom target is behind. BOOST only on a clear kart straight.',['FORWARD','COAST','BRAKE','REVERSE','BOOST'])
-};
-export const routeQuestions={...courseQuestions,steering:choice('Choose the driving line for the route tracker: CENTER normally, LEFT or RIGHT to pass an obstacle only when that line has more clearance. Stay on a clear current line instead of weaving. Follow the GPS route; these are lateral offsets from it, NOT steering-wheel directions. Prefer CENTER through cone gates.',['LEFT','CENTER','RIGHT'])};
+export {steeringValues} from './vehicle-controls.js';
+export const courseQuestions=vehicleQuestions;
 export const angleWrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 const forward=h=>({x:Math.sin(h),z:-Math.cos(h)});
@@ -51,12 +49,13 @@ export function createCourse(course='parking',density='medium',limit=160){
   const start=pathPoint(w.path,22);Object.assign(w,{x:start.x,z:start.z,heading:start.heading,progress:22,pathS:22,startS:22});
   w.halfWidth=course==='city'?7.5:7;w.bounds={x:140,z:140};
   const count={low:2,medium:5,high:9}[density]||5;
-  for(let i=0;i<count;i++)w.objects.push({id:'rival'+i,kind:'car',s:65+i*w.path.length/count,speed:course==='city'?8+i%3:13+i%5,offset:((i%3)-1)*3,width:1.7,length:course==='kart'?2.6:4.2,color:['#ecba60','#cb73ba','#63cbb5'][i%3],x:0,z:0,heading:0});
+  for(let i=0;i<count;i++)w.objects.push({id:'rival'+i,kind:'car',s:course==='kart'?28+i*7:65+i*w.path.length/count,startS:22,speed:course==='city'?8+i%3:19+i%5,offset:((i%3)-1)*3,width:1.7,length:course==='kart'?2.6:4.2,color:['#ecba60','#cb73ba','#63cbb5'][i%3],x:0,z:0,heading:0});
   if(course==='city'){
    w.crossings=[{x:-80,z:0,axis:'x',phase:0},{x:0,z:-80,axis:'z',phase:5},{x:80,z:0,axis:'x',phase:10},{x:0,z:80,axis:'z',phase:15}];
    for(let i=0;i<4;i++)for(let j=0;j<3;j++)w.objects.push({id:`ped${i}/${j}`,kind:'pedestrian',crossing:i,offset:j*.9,width:.5,length:.5,heading:0,x:0,z:0});
   }
  }
+ if(course==='kart')initItems(w,pathPoint);
  w.checkpoint={x:w.x,z:w.z,heading:w.heading,...(w.path.closed?{pathS:w.pathS,progress:w.progress}: {})};updateActors(w,0);return w;
 }
 export function signalAt(w,c){const t=(w.time+c.phase)%24;return t<14?'green':t<17?'amber':'red';}
@@ -64,13 +63,13 @@ export function updateActors(w,dt){
  for(const o of w.objects){
   const old={x:o.x,z:o.z};
   if(o.s!==undefined){
-   let speed=o.speed;
+   let speed=w.time<(o.stunUntil||0)?o.speed*.25:o.speed*(w.time<(o.boostUntil||0)?1.4:1);
    if(w.crossings){const p=pathPoint(w.path,o.s),f=forward(p.heading);if(w.crossings.some(c=>signalAt(w,c)!=='green'&&(c.x-p.x)*f.x+(c.z-p.z)*f.z>0&&distance(p,c)<18))speed=0;}
    const nextS=o.s+speed*dt,p=pathPoint(w.path,nextS);o.x=p.x+Math.cos(p.heading)*o.offset;o.z=p.z+Math.sin(p.heading)*o.offset;o.heading=p.heading;
-   if(dt&&bodyOverlap(w,o)){o.x=old.x;o.z=old.z;o.actualSpeed=0;}else{o.s=nextS;o.actualSpeed=speed;}
+   if(dt&&w.course!=='kart'&&bodyOverlap(w,o)){o.x=old.x;o.z=old.z;o.actualSpeed=0;}else{o.s=nextS;o.actualSpeed=speed;}
   }else if(o.kind==='pedestrian'){
    const c=w.crossings[o.crossing],t=(w.time+c.phase)%24,walk=t>=17?clamp((t-17)/7*21-10.5,-10.5,10.5):-10.5;
-   o.x=c.x+(c.axis==='x'?walk:o.offset);o.z=c.z+(c.axis==='z'?walk:o.offset);o.heading=c.axis==='x'?Math.PI/2:Math.PI;
+   o.x=c.x+(c.axis==='x'?walk:o.offset);o.z=c.z+(c.axis==='z'?walk:o.offset);o.heading=c.axis==='x'?Math.PI/2:Math.PI;o.actualSpeed=t>=17?3:0;
   }
  }
 }
@@ -89,7 +88,7 @@ export function parkingFit(w){
  const hx=Math.abs(Math.cos(a))*.9+Math.abs(Math.sin(a))*2.1,hz=Math.abs(Math.sin(a))*.9+Math.abs(Math.cos(a))*2.1;
  return Math.abs(dx*c+dz*s)+hx<=b.width/2&&Math.abs(-dx*s+dz*c)+hz<=b.length/2&&Math.abs(Math.sin(a))<.17&&Math.abs(w.speed)<.3;
 }
-export function recoverCourse(w){Object.assign(w,w.checkpoint,{speed:0,steer:0,flash:0,lineOffset:0});w.contacts.clear();w.parkHold=0;if(w.course==='parking')w.parkPhase=0;}
+export function recoverCourse(w){Object.assign(w,w.checkpoint,{speed:0,steer:0,flash:0,lineOffset:0});w.contacts.clear();w.yaw=0;w.slip=0;resetRecovery(w);w.parkHold=0;if(w.course==='parking')w.parkPhase=0;}
 export function stepCourse(w,dt,command={steer:0,pedal:'COAST'}){
  if(w.finished)return;
  while(dt>1e-8){const step=Math.min(dt,1/120);integrate(w,step,command);dt-=step;if(w.finished)break;}
@@ -97,29 +96,22 @@ export function stepCourse(w,dt,command={steer:0,pedal:'COAST'}){
 function integrate(w,dt,cmd){
  w.time+=dt;w.flash=Math.max(0,w.flash-dt);updateActors(w,dt);
  const old={x:w.x,z:w.z,heading:w.heading},oldSpeed=w.speed;
- if(cmd.line!==undefined){const desired=cmd.line*(w.course==='slalom'?.55:2.5);w.lineOffset=(w.lineOffset||0)+clamp(desired-(w.lineOffset||0),-2*dt,2*dt);}
- const requested=cmd.line===undefined?cmd.steer||0:trackSteering(w,w.lineOffset||0);
- w.steer+=clamp(clamp(requested,-1,1)-w.steer,-3*dt,3*dt);
- w.boosting=w.course==='kart'&&cmd.pedal==='BOOST'&&w.boost>0&&w.speed>=0;
- w.boost=clamp(w.boost+(w.boosting?-32:8)*dt,0,100);
- const cap=Math.min(w.limit,w.course==='parking'?6:w.course==='city'?22:w.course==='slalom'?28:60)*(w.boosting?1.35:1);
- const acceleration=w.boosting?18:w.course==='parking'?3:9;
- if(cmd.pedal==='BRAKE')w.speed=Math.sign(w.speed)*Math.max(0,Math.abs(w.speed)-20*dt);
- else if(cmd.pedal==='REVERSE')w.speed=clamp(w.speed-(w.speed>0?20:3)*dt,-4,cap);
- else if(cmd.pedal==='FORWARD'||cmd.pedal==='BOOST')w.speed=clamp(w.speed+(w.speed<0?20:acceleration)*dt,-4,cap);
- else w.speed=Math.sign(w.speed)*Math.max(0,Math.abs(w.speed)-(1.2+Math.abs(w.speed)*.025)*dt);
- if(w.speed>cap)w.speed=Math.max(cap,w.speed-12*dt);
- // Apply grip after converting the rack input, not before. Multiplying the
- // grip-limited angle by "slight" steering made cornering needlessly weak.
- const v=(oldSpeed+w.speed)/2,maxAngle=Math.min(.62,Math.atan(9*2.5/Math.max(1,v*v))),steerAngle=clamp(w.steer*.62,-maxAngle,maxAngle);
- w.heading=angleWrap(w.heading+v/2.5*Math.tan(steerAngle)*dt);const f=forward(w.heading);w.x+=f.x*v*dt;w.z+=f.z*v*dt;
+ const movement=vehicleStep(w,dt,w.time<(w.stunUntil||0)?{...cmd,throttle:0,brake:.5}:cmd);
+ w.x+=movement.dx;w.z+=movement.dz;
+ if(w.course==='kart')stepItems(w,dt,cmd);
  const overlaps=w.objects.filter(o=>bodyOverlap(w,o));
  const edge=Math.abs(w.x)>w.bounds.x-1||Math.abs(w.z)>w.bounds.z-1||(w.halfWidth&&projectPath(w.path,w).distance>w.halfWidth-.7);
  const contacts=new Set(overlaps.map(o=>o.id));if(edge)contacts.add('edge');
  if(contacts.size){
   // Let an already-touching body move out, but never deeper into the obstacle.
   const escaped=!edge&&overlaps.every(o=>w.contacts.has(o.id)&&distance(w,o)>distance(old,o)+1e-7);
-  if(!escaped){Object.assign(w,old);w.speed=0;}
+  if(!escaped){
+   Object.assign(w,old);
+   if(w.course==='kart'&&!edge&&overlaps.every(o=>o.kind==='car')){
+    // Contact transfers momentum and separates bodies; kart rivals are not immovable walls.
+    for(const o of overlaps){const dx=w.x-o.x,dz=w.z-o.z,n=Math.hypot(dx,dz)||1;w.x+=dx/n*.04;w.z+=dz/n*.04;if(!w.contacts.has(o.id)){w.speed*=.8;o.stunUntil=Math.max(o.stunUntil||0,w.time+.2);}}
+   }else{w.speed=0;w.yaw=0;}
+  }
   for(const id of contacts)if(!w.contacts.has(id)){w.hits++;w.flash=.45;}
  }
  // Keep a contact latched until separation, not just until the rollback moves
@@ -149,26 +141,15 @@ export function courseTarget(w){
  if(w.course==='slalom')return w.gates[w.gate]||{x:4,z:-270};
  const p=projectPath(w.path,w);return pathPoint(w.path,p.s+Math.max(8,Math.abs(w.speed)*.85));
 }
-export function trackSteering(w,offset=0){
- const p=projectPath(w.path,w),lookahead=w.course==='slalom'?Math.max(3,Math.abs(w.speed)*.5):Math.max(5,Math.abs(w.speed)*.8),target=pathPoint(w.path,p.s+lookahead),heading=target.heading;
- const x=target.x+Math.cos(heading)*offset,z=target.z+Math.sin(heading)*offset,bearing=angleWrap(Math.atan2(x-w.x,w.z-z)-w.heading),d=Math.max(2,Math.hypot(x-w.x,z-w.z));
- return clamp(Math.atan2(5*Math.sin(bearing),d)/.62,-1,1);
-}
 export function courseState(w){
- const target=courseTarget(w),bearing=angleWrap(Math.atan2(target.x-w.x,w.z-target.z)-w.heading),f=forward(w.heading);
- const signals=(w.crossings||[]).map(c=>({distance_m:distance(w,c),ahead:(c.x-w.x)*f.x+(c.z-w.z)*f.z,status:signalAt(w,c)})).filter(c=>c.ahead>0&&c.distance_m<50);
- const horizon=Math.min(60,w.sensorRange||60);
- function ray(a,range){const d=forward(w.heading+a);let free=range,kind=null;for(let t=1;t<range;t++){const p={x:w.x+d.x*t,z:w.z+d.z*t},o=w.objects.find(o=>Math.hypot(p.x-o.x,p.z-o.z)<(o.kind==='car'?2.3:1.1));if(o||Math.abs(p.x)>w.bounds.x-1||Math.abs(p.z)>w.bounds.z-1||(w.halfWidth&&projectPath(w.path,p).distance>w.halfWidth-.8)){free=t;kind=o?.kind||'road_edge';break;}}return {angle_degrees:Math.round(a*180/Math.PI),clearance_m:free,obstacle:kind};}
- const rays=[-.8,-.4,0,.4,.8].map(a=>ray(a,horizon)),rear=ray(Math.PI,12);
- const dist=distance(w,target);let recommended=w.course==='parking'?Math.min(12,dist*3):w.course==='slalom'?28:w.course==='city'?45:100;
- if(w.path.closed){const p=projectPath(w.path,w);let curvature=0;for(let s=0;s<Math.max(25,Math.abs(w.speed)*2);s+=5){const a=pathPoint(w.path,p.s+s),b=pathPoint(w.path,p.s+s+5);curvature=Math.max(curvature,Math.abs(angleWrap(b.heading-a.heading))/5);}recommended=Math.min(recommended,Math.sqrt(6/Math.max(.001,curvature))*3.6);}
- const route=projectPath(w.path,w),lines=[-1,0,1].map((side,i)=>{
-  let gap=horizon,nearest=null;
-  for(const o of w.objects){if(distance(w,o)>horizon)continue;const p=projectPath(w.path,o);let ahead=p.s-route.s;if(w.path.closed&&ahead< -w.path.length/2)ahead+=w.path.length;const lateral=(o.x-p.x)*Math.cos(p.heading)+(o.z-p.z)*Math.sin(p.heading),clearance=Math.max(0,ahead-3);
-   if(ahead>=-3&&Math.abs(lateral-side*(w.course==='slalom'?.55:2.5))<1.8&&clearance<gap){gap=clearance;nearest=o;}
-  }
-  const closing=w.speed-(nearest?.actualSpeed||0);
-  return {line:['LEFT','CENTER','RIGHT'][i],clearance_m:Math.round(gap),obstacle:nearest?.kind||null,closing_kmh:nearest?Math.round(closing*3.6):0,time_to_contact_seconds:nearest&&closing>0?+(gap/closing).toFixed(1):null};
- });
- return {task:w.course==='parking'?'Drive to the route target to enter the parking bay. Only after fully inside and aligned, stop.':'Drive forward along the route through every gate or lap without collisions.',course:w.course,speed_kmh:Math.round(w.speed*3.6),current_steering:+w.steer.toFixed(2),current_line:(w.lineOffset||0)<-1?'LEFT':(w.lineOffset||0)>1?'RIGHT':'CENTER',route_lines:lines,recommended_speed_kmh:Math.round(Math.min(w.limit*3.6,recommended)),target:{distance_m:+dist.toFixed(1),bearing_degrees:+(bearing*180/Math.PI).toFixed(1),side:bearing>.05?'right':bearing<-.05?'left':'ahead',alignment_degrees:+(angleWrap((target.heading||0)-w.heading)*180/Math.PI).toFixed(1)},sensor_horizon_m:horizon,free_space_rays:rays,rear_clearance_m:rear.clearance_m,touching_obstacle:w.contacts.size>0,traffic_signals:signals.map(s=>({distance_m:Math.round(s.distance_m),status:s.status})),nearby_pedestrians:w.objects.filter(o=>o.kind==='pedestrian'&&distance(w,o)<15).length,parking:w.bay?{inside_and_aligned:parkingFit({...w,speed:0}),distance_to_bay_m:+distance(w,w.bay).toFixed(1)}:null,boost_available:w.course==='kart'&&w.boost>10,collision:w.flash>0};
+ const target=courseTarget(w),bearing=angleWrap(Math.atan2(target.x-w.x,w.z-target.z)-w.heading),p=projectPath(w.path,w);
+ const forward=Math.sin(w.heading),north=Math.cos(w.heading);
+ const tf=(target.x-w.x)*forward-(target.z-w.z)*north,tr=(target.x-w.x)*north+(target.z-w.z)*forward;
+ const targetState={description:w.course==='parking'?(w.parkPhase?'parking bay centre':'approach in front of the parking bay'):w.course==='slalom'?'centre of next cone gate':'next road waypoint',direction:(tf<0?'behind':'ahead')+(tr<-.5?' left':tr>.5?' right':''),forward_m:+tf.toFixed(1),right_m:+tr.toFixed(1),distance_m:+distance(w,target).toFixed(1),bearing_degrees:+(bearing*180/Math.PI).toFixed(1),alignment_degrees:+(angleWrap((target.heading||0)-w.heading)*180/Math.PI).toFixed(1)};
+ const edge=q=>Math.abs(q.x)>w.bounds.x-1||Math.abs(q.z)>w.bounds.z-1||(w.halfWidth&&projectPath(w.path,q).distance>w.halfWidth-.8);
+ const navigation=[5,12,25,45].map(d=>{const q=pathPoint(w.path,p.s+d),dx=q.x-w.x,dz=q.z-w.z;return [d,+(dx*forward-dz*north).toFixed(1),+(dx*north+dz*forward).toFixed(1),+(angleWrap(q.heading-w.heading)*180/Math.PI).toFixed(1)];});
+ return {task:({parking:'Park the entire car inside the marked bay, aligned and stopped.',slalom:'Finish the timed slalom quickly through every gate. Cone and boundary contacts are penalties.',city:'Drive the circuit efficiently. Yield to pedestrians and signals; avoid vehicle contact.',kart:'Win the three-lap combat race. Overtake rivals, collect pickups, attack with items, defend and drift. Rival bumps are legal; walls and attacks cost speed.'})[w.course],course:w.course,vehicle:vehicleState(w),target:targetState,navigation:{columns:['path_ahead_m','forward_m','right_m','heading_deg'],points:navigation},observations:surroundings(w,w.objects,w.course==='parking'?40:100,w.course==='parking'?30:40,w.course==='parking'?40:45),manoeuvres:manoeuvrePreview(w,w.objects,edge),
+ road:{half_width_m:w.halfWidth||w.bounds.x,lateral_error_m:+((w.x-p.x)*Math.cos(p.heading)+(w.z-p.z)*Math.sin(p.heading)).toFixed(1),heading_error_deg:+(angleWrap(p.heading-w.heading)*180/Math.PI).toFixed(1),bounds:{left:-w.bounds.x,right:w.bounds.x,north:-w.bounds.z,south:w.bounds.z}},
+ touching_obstacle:!!w.contacts.size,contacts:[...w.contacts],previous_controls:w.recentControls||[],recovery_assist:w.recoveryAssist?{enabled:true,active_wheel:w.recovery?.lock||null}:undefined,traffic_signals:(w.crossings||[]).filter(c=>distance(w,c)<60).map(c=>({forward_m:+((c.x-w.x)*forward-(c.z-w.z)*north).toFixed(1),right_m:+((c.x-w.x)*north+(c.z-w.z)*forward).toFixed(1),status:signalAt(w,c)})),
+ parking:w.bay?{...w.bay,inside_and_aligned:parkingFit({...w,speed:0})}:undefined,next_gates:w.gates.slice(w.gate,w.gate+3).map(g=>({forward_m:+((g.x-w.x)*forward-(g.z-w.z)*north).toFixed(1),right_m:+((g.x-w.x)*north+(g.z-w.z)*forward).toFixed(1),opening_width_m:g.width})),position:{x:+w.x.toFixed(1),z:+w.z.toFixed(1),heading_deg:+(w.heading*180/Math.PI).toFixed(1)},kart:w.course==='kart'?itemState(w):undefined,control_period_seconds:w.reactionSeconds||.4};
 }
