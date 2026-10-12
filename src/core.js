@@ -1,3 +1,5 @@
+import {RequestBudget, positiveInteger, advertisedCapacity, measureCapacity} from './capacity.js';
+import {normalizeEndpoint, connectionFetchOptions} from './connection.js';
 export const $ = (q, root = document) => root.querySelector(q);
 export function el(tag, attrs = {}, text) {
   const node = document.createElement(tag);
@@ -31,12 +33,13 @@ export class Run {
 }
 // Pull only as fast as the bounded pool can finish; never drop overflow rows.
 export async function pool(iterable, concurrency, run, task, rate = 0) {
-  if(!Number.isInteger(concurrency)||concurrency<1||concurrency>32)throw Error('Concurrency must be an integer from 1 to 32.');
+  const limit=()=>positiveInteger(typeof concurrency==='function'?concurrency():concurrency);
+  limit();
   const active=new Set(); let next=performance.now(); let failure;
   try {
     for await (const item of iterable) {
       await run.gate();
-      while(active.size>=concurrency) { await Promise.race(active); await run.gate(); }
+      while(active.size>=limit()) { await Promise.race(active); await run.gate(); }
       if(rate>0) { await delay(Math.max(0,next-performance.now()),run.signal);next=Math.max(next,performance.now())+1000/rate; }
       await run.gate();
       let p; p=Promise.resolve().then(()=>task(item)).catch(e=>{failure??=e;run.stop();}).finally(()=>active.delete(p));active.add(p);
@@ -86,25 +89,74 @@ export function parseAnswers(raw, questions, protocol) {
   return result;
 }
 export function endpointOrigin(value) {
-  const u=new URL(value);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash||!['/',''].includes(u.pathname))throw Error('Enter an HTTP(S) origin only, without /v1, credentials or a path.');return u.origin;
+  return normalizeEndpoint(value);
 }
 export class Client {
-  constructor(config, onResult=()=>{}) { this.config=config;this.onResult=onResult; }
+  constructor(config, onResult=()=>{}) { this.config=config;this.onResult=onResult;this.detected=1;this.capacitySource='unmeasured';this.budget=new RequestBudget(this.concurrency);this.latencyMs=0; }
+  get concurrency(){return positiveInteger(Number(this.config.concurrency)||this.detected);}
+  get capacity(){return Math.min(this.concurrency,this.budget.limit);}
+  resetCapacity(){this.detected=1;this.capacitySource='unmeasured';this.budget.setLimit(this.concurrency);}
   async request(path, body, signal) {
     const {url,key,timeout}=this.config;const origin=endpointOrigin(url);
     const timeoutSignal=AbortSignal.timeout(Number(timeout||30)*1000);
     const combined=signal?AbortSignal.any([signal,timeoutSignal]):timeoutSignal;
     let response;
-    try {response=await fetch(origin+path,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(key?{Authorization:'Bearer '+key}:{})},body:body?JSON.stringify(body):undefined,signal:combined,credentials:'omit',redirect:'error',cache:'no-store'});}
+    try {response=await fetch(origin+path,{...connectionFetchOptions(origin),method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(key?{Authorization:'Bearer '+key}:{})},body:body?JSON.stringify(body):undefined,signal:combined});}
     catch(e){if(combined.aborted)throw e;throw Error('Cannot reach endpoint. Check its URL, NInfer --cors, browser LAN permission, and HTTPS/mixed-content rules.');}
-    if(!response.ok){const detail=(await response.text()).slice(0,500);throw Error(`HTTP ${response.status}: ${detail}`);}
+    if(!response.ok){const detail=(await response.text()).slice(0,500),error=Error(`HTTP ${response.status}: ${detail}`);error.status=response.status;error.retryAfter=response.headers.get('Retry-After');throw error;}
     return response.json();
   }
-  async infer(state, questions, signal) {
+  async connect(signal, onSample=()=>{}) {
+    this.resetCapacity();
+    const catalog=await this.request('/v1/models',undefined,signal);
+    if(!Array.isArray(catalog?.data))throw Error('Invalid model catalog.');
+    const models=catalog.data.map(m=>m.id).filter(id=>typeof id==='string');
+    if(!this.config.model&&models.length)this.config.model=models[0];
+    const questions={ready:choice('Select READY.', ['READY','WAIT'])};
+    const probe=async s=>{const state={connection_probe:true},protocol=this.config.protocol,body=protocol==='decision'?toDecision(state,questions):{state,questions};if(this.config.model)body.model=this.config.model;return parseAnswers(await this.request('/v1/'+protocol,body,s),questions,protocol);};
+    await probe(signal); // Verify the selected Jev route; warm prefix separately.
+    const advertised=advertisedCapacity(catalog,this.config.model);
+    let report;
+    if(this.config.concurrency)report={limit:this.concurrency,source:'manual',samples:[]};
+    else if(advertised)report={limit:advertised,source:'reported',samples:[]};
+    else {
+      const deadline=AbortSignal.timeout(12000),bounded=signal?AbortSignal.any([signal,deadline]):deadline,samples=[];let best=null;
+      try { report=await measureCapacity(probe,{ceiling:this.config.probeCeiling||64,budgetMs:8000,signal:bounded,onSample:s=>{samples.push(s);if(!s.rejected&&(!best||s.perSecond>best.perSecond*1.1))best=s;onSample(s);}}); }
+      catch(e){if(signal?.aborted)throw e;if(!deadline.aborted)throw e;report={limit:best?.width||1,source:best?'measured; probe deadline reached':'probe timed out; unmeasured',samples};}
+    }
+    this.detected=report.limit;this.capacitySource=report.source;this.budget.setLimit(this.concurrency);
+    return {...report,models};
+  }
+  async infer(state, questions, signal, options={}) {
     validQuestions(questions);
-    const protocol=this.config.protocol;const body=protocol==='decision'?toDecision(state,questions):{state,questions};
+    const protocol=options.protocol||this.config.protocol;const body=protocol==='decision'?toDecision(state,questions):{state,questions};
     if(this.config.model)body.model=this.config.model;
-    const start=performance.now();const raw=await this.request('/v1/'+protocol,body,signal);const answers=parseAnswers(raw,questions,protocol);
-    const result={answers,raw,request:body,protocol,ms:performance.now()-start,at:new Date().toISOString()};this.onResult(result);return result;
+    const started=performance.now(),entries=Object.entries(questions),width=this.config.questionParallelism===false?1:Math.min(this.capacity,entries.length),size=Math.ceil(entries.length/width),parts=[];
+    const runSignal=signal?AbortSignal.any([signal,AbortSignal.timeout((Number(this.config.timeout)||30)*1000)]):AbortSignal.timeout((Number(this.config.timeout)||30)*1000);
+    const controller=new AbortController(),combined=AbortSignal.any([runSignal,controller.signal]);
+    try {
+      await Promise.all(Array.from({length:Math.ceil(entries.length/size)},async(_,i)=>{
+        const qs=Object.fromEntries(entries.slice(i*size,(i+1)*size));
+        const wait=performance.now();let retries=0;
+        for(;;){
+          const release=await this.budget.acquire(combined,options.priority??1),sent=performance.now();let retry;
+          try {
+            combined.throwIfAborted();
+            const payload=protocol==='decision'?toDecision(state,qs):{state,questions:qs};if(this.config.model)payload.model=this.config.model;
+            const raw=await this.request('/v1/'+protocol,payload,combined);
+            parts[i]={raw,answers:parseAnswers(raw,qs,protocol),queueMs:sent-wait,ms:performance.now()-sent,retries};break;
+          } catch(e) {
+            if(e.status===429){this.budget.limit=Math.max(1,Math.floor(this.budget.limit/2));this.capacitySource='backpressure';}
+            if(e.status!==429||retries++>=2){controller.abort(e);throw e;}
+            const seconds=Number(e.retryAfter),date=Date.parse(e.retryAfter);
+            retry=Math.max(100*2**(retries-1),Number.isFinite(seconds)?seconds*1000:Number.isFinite(date)?date-Date.now():0);
+          } finally {release();}
+          await delay(retry,combined);
+        }
+      }));
+    } catch(e) {controller.abort(e);throw e;}
+    const result={answers:Object.assign(Object.create(null),...parts.map(p=>p.answers)),raw:parts.length===1?parts[0].raw:{parts:parts.map(p=>p.raw)},request:body,protocol,ms:performance.now()-started,queueMs:Math.max(...parts.map(p=>p.queueMs)),networkMs:Math.max(...parts.map(p=>p.ms)),httpRequests:parts.reduce((n,p)=>n+1+p.retries,0),at:new Date().toISOString()};
+    this.latencyMs=this.latencyMs?this.latencyMs*.8+result.ms*.2:result.ms;
+    this.onResult(result);return result;
   }
 }

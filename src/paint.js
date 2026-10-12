@@ -1,4 +1,4 @@
-import {$,el,Run,pool,choice,download,Client} from './core.js';
+import {$,el,Run,pool,choice,download} from './core.js';
 import {canvasLayout,canvasBatches,selectedRegions,selectionCount,paintState,applyPaintAnswer,contains,outputSize} from './paint-canvas.js';
 
 import {buildRequests,pack,palette as referencePalette} from './pigment/jev.mjs';
@@ -16,7 +16,7 @@ export function initPaint(client,toast){
   const selection=()=>$('#paint-region').value;
   function stash(){history.push({data:data.slice(),scores:{...scores},pigment,lastPigment,pigmentEdge,blendPixels});if(history.length>10)history.shift();$('#paint-undo').disabled=false;}
   const newComposition=()=>!isSkin()&&!$('#paint-preserve').checked&&selection()==='all'&&!layout.regions.length;
-  function estimate(){const n=selectionCount(layout,selection()),fresh=newComposition(),channels=['hsl','rgb'].includes($('#paint-method').value)?3:1;$('#paint-estimate').textContent=layout.width+'×'+layout.height+' · '+n.toLocaleString()+' pixels · '+Math.ceil(fresh?n*channels/30:n/16).toLocaleString()+' requests · /v1/'+(fresh?'systemone':client.config.protocol);}
+  function estimate(){const n=selectionCount(layout,selection()),fresh=newComposition(),channels=['hsl','rgb'].includes($('#paint-method').value)?3:1;$('#paint-estimate').textContent=layout.width+'×'+layout.height+' · '+n.toLocaleString()+' pixels · '+Math.ceil(fresh?n*channels/30:n/16).toLocaleString()+' batches · /v1/'+(fresh?'systemone':client.config.protocol);}
   function regions(){const list=$('#paint-region');list.replaceChildren();const add=(value,label)=>list.append(el('option',{value},label));add('all',isSkin()?'All mapped faces + outer layers':layout.regions.length?'All named regions':'Entire canvas');if(isSkin()){add('base','All base faces');add('outer','All outer layers');for(const part of ['Head','Body','Right arm','Left arm','Right leg','Left leg'])add('part:'+part,part+' · base faces');}for(const r of layout.regions)add(r.name,r.name);if(isSkin())list.value='Head / Base / Front';estimate();}
   function syncRaw(){raw.width=layout.width;raw.height=layout.height;const blend=!isSkin()&&$('#paint-surface').value==='blend';raw.getContext('2d').putImageData(new ImageData(blend&&blendPixels?blendPixels:surfacePixels(data,scores,blend),layout.width,layout.height),0,0);}
   function render(target,guides=false){
@@ -59,9 +59,9 @@ export function initPaint(client,toast){
   async function composition(current,prompt,started){
     const method=$('#paint-method').value,answers={},total=layout.width*layout.height;
     const batches=buildRequests(prompt,method,layout.width,layout.height);
-    const infer=new Client({...client.config,protocol:'systemone'},client.onResult);
+    const infer=(state,questions,signal)=>client.infer(state,questions,signal,{protocol:'systemone',priority:0});
     $('#paint-status').textContent='Inferring';
-    await pool(batches,Math.min(4,client.config.concurrency),current,async batch=>{const result=await infer.infer(batch.state,batch.questions,current.signal);Object.assign(answers,result.answers);requests.push({ms:result.ms,questions:Object.keys(batch.questions).length});complete=Object.keys(answers).length/(method==='hsl'||method==='rgb'?3:1);$('#paint-progress').textContent=Math.floor(complete)+' / '+total+' pixels';$('#paint-time').textContent=((performance.now()-started)/1000).toFixed(1)+' s';});
+    await pool(batches,()=>client.capacity,current,async batch=>{const result=await infer(batch.state,batch.questions,current.signal);Object.assign(answers,result.answers);requests.push({ms:result.ms,questions:Object.keys(batch.questions).length});complete=Object.keys(answers).length/(method==='hsl'||method==='rgb'?3:1);$('#paint-progress').textContent=Math.floor(complete)+' / '+total+' pixels';$('#paint-time').textContent=((performance.now()-started)/1000).toFixed(1)+' s';});
     const result=pack(answers,method,layout.width,prompt,layout.height),prepared=prepare(result);
     for(let i=0;i<prepared.pixels.length;i++)data.set([...prepared.pixels[i].hard,255],i*4);
     scores=answers;dirty=true;draw();$('#paint-status').textContent='Rendering';await texture(result,current.signal);
@@ -69,7 +69,7 @@ export function initPaint(client,toast){
   async function start(){if(run)return;const prompt=$('#paint-prompt').value.trim();if(!prompt)return toast('Describe a picture or an edit first.');let next;try{next=readLayout();}catch(e){return toast(e.message);}if(next.width!==layout.width||next.height!==layout.height||next.kind!==layout.kind){if(dirty&&!confirm('Use the new canvas dimensions?'))return;configure(next);controls();}const total=selectionCount(layout,selection());if(!total)return toast('Select a mapped region.');if(total>16384&&!confirm('Infer '+total.toLocaleString()+' pixels in '+Math.ceil(total/16).toLocaleString()+' requests? This can take a long time.'))return;
     stash();const current=new Run();run=current;lock(true);complete=0;requests=[];const started=performance.now(),palette={...palettes[$('#paint-palette').value]},edit=$('#paint-preserve').checked,selected=selection(),base=data.slice();$('#paint-watermark').hidden=true;$('#paint-status').textContent='Inferring';pigment=null;lastPigment=null;blendPixels=null;pigmentEdge=0;
     $('#paint-progress').textContent='0 / '+total.toLocaleString()+' pixels';$('#paint-time').textContent='0.0 s';
-    try{if(newComposition()){await composition(current,prompt,started);}else await pool(canvasBatches(layout,selected),client.config.concurrency,current,async pixels=>{
+    try{if(newComposition()){await composition(current,prompt,started);}else await pool(canvasBatches(layout,selected),()=>client.capacity,current,async pixels=>{
       const options=[...Object.keys(palette),...(edit?['KEEP']:[])];if(isSkin()&&pixels.some(p=>p.region.includes(' / Outer / ')))options.push('CLEAR');
       // All requests in a pass use the same starting image, regardless of completion order.
       const state=paintState(layout,base,pixels,prompt,palette),questions=Object.fromEntries(pixels.map(p=>['p'+p.index,choice('Choose the color at x='+p.x+', y='+p.y+', '+p.region+'. '+(edit?'KEEP preserves this pixel if no change is needed.':'')+(options.includes('CLEAR')&&p.region.includes(' / Outer / ')?' CLEAR removes an outer-layer pixel.':''),options.filter(v=>v!=='CLEAR'||p.region.includes(' / Outer / ')))]));

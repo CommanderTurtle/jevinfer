@@ -11,7 +11,7 @@ export function initVortex(client,toast){
   function trace(text){const node=el('span',{},text);$('#vortex-ticker').prepend(node);while($('#vortex-ticker').children.length>6)$('#vortex-ticker').lastChild.remove();}
   function metrics(){const seconds=Math.max(.001,((pausedAt||performance.now())-started-pauseMs)/1000);$('#vortex-completed').textContent=completed.toLocaleString();$('#vortex-errors').textContent=errors;$('#vortex-pending').textContent=inflight;$('#vortex-row').textContent=read.toLocaleString()+' rows read';$('#vortex-rate').textContent=(completed/seconds).toFixed(1)+' /s';
     const busy=!!run&&!run.paused&&!run.signal.aborted;stage.classList.toggle('is-running',busy);stage.classList.toggle('has-inflight',inflight>0);
-    const levels=[busy?100:0,100*inflight/Math.max(1,client.config.concurrency),read?100*(completed+errors)/read:0,100];bars.forEach((bar,i)=>bar.style.width=Math.min(100,levels[i])+'%');
+    const levels=[busy?100:0,100*inflight/Math.max(1,client.capacity),read?100*(completed+errors)/read:0,100];bars.forEach((bar,i)=>bar.style.width=Math.min(100,levels[i])+'%');
     $('#op-classifier').textContent=inflight?'ACTIVE':'IDLE';if(read)$('#op-journal').textContent=busy||inflight?'RECORDING':'SAVED';
     $('#vortex-flow').textContent=run?run.paused?'SOURCE PAUSED → DRAIN → SAVE':inflight?'READ → INFER → SAVE':'WAITING FOR NEXT ROW':'READ → INFER → SAVE / IDLE';
   }
@@ -24,7 +24,7 @@ export function initVortex(client,toast){
   async function start(){if(run)return;if(!file)return toast('Import a file or choose the synthetic sample CSV.');const selected=[...$('#column-picker').querySelectorAll('input:checked')].map(n=>n.value);if(!selected.length)return toast('Select at least one column to send.');const labels=$('#vortex-labels').value.split(',').map(x=>x.trim()).filter(Boolean);if(!labels.length||labels.length>32||new Set(labels).size!==labels.length)return toast('Use 1–32 distinct choices.');const instructions=$('#vortex-instructions').value.trim();if(!instructions)return toast('Add classification instructions.');
     const current=new Run();run=current;lock(true);runId=crypto.randomUUID();read=completed=errors=inflight=0;latencies=[];started=performance.now();pauseMs=pausedAt=0;visual.reset();$('#vortex-ticker').replaceChildren();$('#vortex-feed').replaceChildren();cells.forEach(c=>c.style.background='');$('#vortex-pause').textContent='Pause';$('#vortex-mode').textContent='RUNNING';$('#vortex-render').textContent='/v1/'+client.config.protocol+'';$('#op-reader').textContent='STREAMING';$('#op-classifier').textContent='ACTIVE';$('#op-journal').textContent='OPENING';$('#vortex-export').disabled=true;$('#vortex-latest').textContent='Waiting for the first completed row';$('#vortex-choice').textContent='Reading data';$('#vortex-confidence').textContent='—';metrics();sparkline($('#vortex-spark'),[]);
     try{await journal.open();$('#op-journal').textContent='RECORDING';localStorage.setItem('jev-infer.lastRun',runId);
-      await pool(rows(file),client.config.concurrency,current,async item=>{
+      await pool(rows(file),()=>client.capacity,current,async item=>{
         read++;inflight++;metrics();const state=Object.fromEntries(selected.filter(k=>Object.hasOwn(item.row,k)).map(k=>[k,item.row[k]]));let result,error;
         visual.begin(item.index,String(state.slug??state.name??state.title??('row '+(item.index+1))));
         try{result=await client.infer(state,{classification:choice(instructions,labels)},current.signal);}

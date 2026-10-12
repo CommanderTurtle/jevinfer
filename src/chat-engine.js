@@ -1,3 +1,4 @@
+import {positiveInteger} from './capacity.js';
 import {validQuestions} from './core.js';
 
 export const presets = {
@@ -99,7 +100,7 @@ export function makeQuestions(instructions,criteria,extras={}) {
 // Completed judgments are released in original order, including explicit error markers.
 export class ChatReplay {
   constructor({messages,times,workers,infer,now=()=>performance.now(),onArrival=()=>{},onRelease=()=>{},onChange=()=>{},ordered=true}) {
-    if(!Number.isInteger(workers)||workers<1||workers>32)throw Error('Use 1–32 chat workers.');
+    positiveInteger(typeof workers==='function'?workers():workers,'Chat workers');
     if(!messages.length||times.length!==messages.length||times.some((t,i)=>!Number.isFinite(t)||t<0||i>0&&t<times[i-1]))throw Error('Invalid replay schedule.');
     Object.assign(this,{messages,times,workers,infer,now,onArrival,onRelease,onChange,ordered});
     this.controller=new AbortController();this.origin=now();this.pauseTotal=0;this.pausedAt=null;
@@ -119,7 +120,7 @@ export class ChatReplay {
       this.onArrival(this.records[index],this);
     }
     this.peakQueue=Math.max(this.peakQueue,this.arrived-this.dispatched);
-    while(this.active<this.workers&&this.dispatched<this.arrived) {
+    while(this.active<positiveInteger(typeof this.workers==='function'?this.workers():this.workers)&&this.dispatched<this.arrived) {
       const index=this.dispatched++,record=this.records[index];
       record.status='inflight';record.dispatchedMs=this.elapsed();record.waitMs=record.dispatchedMs-record.scheduledMs;this.active++;
       Promise.resolve().then(()=>{if(this.stopped)throw Error('Stopped');return this.infer(record.message,this.controller.signal);}).then(

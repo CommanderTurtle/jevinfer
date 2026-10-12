@@ -58,7 +58,8 @@ export function vehicleStep(w,dt,command){
  const kart=w.course==='kart',direction=c.gear==='REVERSE'?-1:1,changing=direction*w.speed<-.25,drag=.25+.0009*w.speed*w.speed;
  const boost=w.course==='kart'&&w.time<(w.boostUntil||0);
  const braking=c.brake*(kart?15:11)+(hb?6:0)+(changing?10:0);
- const propulsion=!changing&&!hb?c.throttle*(direction<0?3.5:boost?18:kart?10:7):0;
+ if(w.course==='slalom')c.throttle=Math.min(c.throttle,(w.controls?.throttle||0)+dt*.7);
+ const propulsion=!changing&&!hb?c.throttle*(direction<0?3.5:boost?18:kart?10:w.course==='slalom'?2.4:7):0;
  const movingSign=Math.sign(w.speed)||direction;
  w.speed=movingSign*Math.max(0,Math.abs(w.speed)+(propulsion*direction*movingSign-drag-braking)*dt);
  w.speed=clamp(w.speed,-7,boost?54:kart?44:52); // mechanical drivetrain limits, never a user success setting
@@ -77,7 +78,7 @@ export function wheelEffects(w){
  const period=clamp(w.reactionSeconds||.4,.1,2),kart=w.course==='kart',gain=steeringGain(w),grip=gain*(kart?16:10)/Math.max(1,Math.abs(w.speed));
  return {period_seconds:round(period),assumption:'Current speed, normal grip, steady steering; not a recommended action.',heading_change_deg:Object.fromEntries(Object.entries(steeringValues).map(([key,value])=>[key,round(clamp(gain*w.speed/(kart?1.7:2.5)*Math.tan(value*.62),-grip,grip)*period*180/Math.PI)]))};
 }
-export function vehicleState(w){return {speed_kmh:round(w.speed*3.6),wheel:round(w.steer||0),yaw_deg_s:round((w.yaw||0)*180/Math.PI),gear:w.controls?.gear||'DRIVE',throttle:w.controls?.throttle||0,brake:w.controls?.brake||0,handbrake:!!w.controls?.handbrakeActive,stopping_distance_m:round(w.speed*w.speed/22+Math.abs(w.speed)*(w.reactionSeconds||.4)),dimensions_m:[1.8,w.course==='kart'?2.6:4.2],wheelbase_m:w.course==='kart'?1.7:2.5,wheel_effects:wheelEffects(w)};}
+export function vehicleState(w){return {maximum_acceleration_m_s2:w.course==='slalom'?2.4:w.course==='kart'?10:7,speed_kmh:round(w.speed*3.6),wheel:round(w.steer||0),yaw_deg_s:round((w.yaw||0)*180/Math.PI),gear:w.controls?.gear||'DRIVE',throttle:w.controls?.throttle||0,brake:w.controls?.brake||0,handbrake:!!w.controls?.handbrakeActive,stopping_distance_m:round(w.speed*w.speed/22+Math.abs(w.speed)*(w.reactionSeconds||.4)),dimensions_m:[1.8,w.course==='kart'?2.6:4.2],wheelbase_m:w.course==='kart'?1.7:2.5,wheel_effects:wheelEffects(w)};}
 // Compact, labelled 360-degree observations, including every nearby cone and side car.
 export function surroundings(car,objects,front=100,rear=40,side=45){
  const s=Math.sin(car.heading||0),c=Math.cos(car.heading||0),out=[];
@@ -89,7 +90,7 @@ export function surroundings(car,objects,front=100,rear=40,side=45){
  const half=car.course==='kart'?1.3:2.1,frontObjects=out.filter(o=>o[2]>=0&&Math.abs(o[3])<o[4]/2+.95),rearObjects=out.filter(o=>o[2]<0&&Math.abs(o[3])<o[4]/2+.95);
  const frontGap=Math.min(front,...frontObjects.map(o=>Math.max(0,o[2]-o[5]/2-half))),rearGap=Math.min(rear,...rearObjects.map(o=>Math.max(0,-o[2]-o[5]/2-half)));
  const names=['id','kind','forward_m','right_m','width_m','length_m','relative_forward_m_s','relative_right_m_s','heading_deg'];
- return {bumper_clearance_m:{front:round(frontGap),rear:round(rearGap)},range_m:{front,rear,side},objects:out.slice(0,40).map(row=>Object.fromEntries(names.map((name,i)=>[name,row[i]]))),truncated:out.length>40};
+ return {bumper_clearance_m:{front:round(frontGap),rear:round(rearGap)},range_m:{front,rear,side},objects:out.map(row=>Object.fromEntries(names.map((name,i)=>[name,row[i]])))};
 }
 export function manoeuvrePreview(w,objects,edge){
  const out=[];

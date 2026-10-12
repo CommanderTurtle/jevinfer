@@ -57,15 +57,14 @@ export function initRace(client,toast){
  async function start(){
   stop();if(!init3D())return;if(world.finished)reset();const current=new Run();run=current;mode='jev';lastDecision=performance.now();throttle='COAST';command={steer:0,pedal:'COAST'};
   resetDrivingPolicy(world);combat=createCombatPilot(client,()=>world,current.signal,a=>{weapon=a;log(a.panic?'Last stand':(world.item||'Item')+(a.target?' → '+a.target:''));},e=>log('Weapon · '+e.message));
-  $('#race-start').disabled=true;$('#race-demo').disabled=true;$('#race-stop').disabled=false;let retry=0;
+  $('#race-start').disabled=true;$('#race-demo').disabled=true;$('#race-stop').disabled=false;
   try{while(!current.signal.aborted&&!world.finished){
    if(isBoat()&&world.time<5){lastDecision=performance.now();await delay(100,current.signal);continue;}
-   const started=performance.now();let result;
+   const started=performance.now(),hitsAtRequest=world.hits;let result;
 
-   try{const helm=isBoat()?boatContract(world):null;result=isFree()?await inferDriving(client,world,current.signal):await client.infer(helm?.state||snapshot(),helm?.questions||(world.arcade?kartQuestions:drivingQuestions),current.signal);retry=0;}
-   catch(e){if(!current.signal.aborted&&/^HTTP 429:/.test(e.message)&&retry<4){retry++;command={brake:1,steer:0,pedal:'REEF'};throttle='BRAKE';$('#race-command').textContent='Endpoint busy · braking';log('Retry '+retry+'/4');await delay(500*2**(retry-1),current.signal);continue;}throw e;}
+   const helm=isBoat()?boatContract(world):null;result=isFree()?await inferDriving(client,world,current.signal):await client.infer(helm?.state||snapshot(),helm?.questions||(world.arcade?kartQuestions:drivingQuestions),current.signal);
    if(current.signal.aborted)break;const age=performance.now()-started;decisions++;world.reactionSeconds=+(Math.max(age,Number($('#race-interval').value))/1000*Number($('#race-timescale').value)).toFixed(2);
-   if(age>4000){command={brake:1,steer:0,pedal:'REEF'};throttle='BRAKE';log('Stale command · brake');}
+   if(result.stale||age>(client.config.controlMaxAge||4000)||world.hits!==hitsAtRequest){command={brake:1,steer:0,pedal:'REEF'};throttle='BRAKE';log('Stale command · brake');}
    else{
     if(isBoat()){command=decodeBoat(result.answers);$('#race-command').textContent=result.answers.rudder.choice+' / '+result.answers.sail.choice+(command.port?' / PORT FIRE':'')+(command.starboard?' / STARBOARD FIRE':'');}
     else if(!isFree()){target=['LEFT','CENTER','RIGHT'].indexOf(result.answers.lane.choice);throttle=result.answers.throttle.choice;$('#race-command').textContent=result.answers.lane.choice+' / '+throttle;}
@@ -73,7 +72,7 @@ export function initRace(client,toast){
     world.recentControls=[...(world.recentControls||[]),{at:+world.time.toFixed(2),command:{...command},speed_kmh:Math.round(world.speed*3.6),contacts:world.hits}].slice(-2);
     lastDecision=performance.now();log('#'+decisions+' · '+$('#race-command').textContent);
    }
-   $('#race-latency').textContent=Math.round(result.ms)+' ms';await delay(Math.max(0,Number($('#race-interval').value)-age),current.signal);
+   $('#race-latency').textContent=Math.round(result.ms)+' ms';const wait=Number($('#race-interval').value)-age;if(wait>0)await delay(wait,current.signal);
   }}catch(e){if(!current.signal.aborted){toast(e.message);log(e.message);}}finally{if(run===current)stop();}
  }
  function manualCommand(){const input=manual.read(world);if(!isBoat()&&!isFree()){target=input.lane;throttle=input.throttle;weapon=input.item?{item:true}:null;}else command=input;}
@@ -82,7 +81,7 @@ export function initRace(client,toast){
   if(!visible)return;const elapsed=now-last;let dt=Math.min(.25,elapsed/1000)||0;last=now;
   if(elapsed>0&&elapsed<500)canvas.dataset.frameMs=((Number(canvas.dataset.frameMs)||elapsed)*.95+elapsed*.05).toFixed(1);
   if(mode!=='parked'){
-   dt*=Number($('#race-timescale').value);const stale=mode==='jev'&&(now-lastDecision)>4000;
+   dt*=Number($('#race-timescale').value);const stale=mode==='jev'&&(now-lastDecision)>(client.config.controlMaxAge||4000);
    if(mode==='manual')manualCommand();const hits=world.hits;
    if(isBoat()){stepBoat(world,dt,stale?{steer:0,pedal:'COAST',fire:0}:{...command,panic:mode==='jev'?!!weapon?.panic:command.panic});weapon=null;}
    else if(world.arcade){stepArcadeKart(world,dt,target,stale?'BRAKE':throttle,stale?{}:weapon||{});weapon=null;}

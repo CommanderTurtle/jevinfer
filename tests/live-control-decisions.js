@@ -1,10 +1,10 @@
 // Opt-in semantic fixtures: check actual choices, not just valid response JSON.
-import {Client} from '../src/core.js';
+import {liveClient} from './live-client.js';
 import {controlCases} from './control-cases.js';
 import {inferDriving,resetDrivingPolicy} from '../src/driving-policy.js';
 import {combatContract} from '../src/combat-policy.js';
 const endpoint=process.env.JEV_ENDPOINT;if(!endpoint)throw Error('Set JEV_ENDPOINT.');
-const client=new Client({url:endpoint,key:process.env.JEV_API_KEY,protocol:process.env.JEV_PROTOCOL||'systemone',timeout:30});
+const client=await liveClient();
 const repeats=Number(process.env.JEV_CONTROL_REPEATS||2);
 if(!Number.isInteger(repeats)||repeats<1||repeats>10)throw Error('JEV_CONTROL_REPEATS must be 1–10.');
 let passed=0,total=0;

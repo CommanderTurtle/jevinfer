@@ -1,9 +1,9 @@
 // Opt-in, bounded live checks for the arcade and final-second emergency contracts.
-import {Client} from '../src/core.js';
+import {liveClient} from './live-client.js';
 import {createArcadeKart,arcadeKartState,kartQuestions} from '../src/arcade-kart.js';
 import {createBoat,panicContract,firePanic,stepBoat,boardingSeconds} from '../src/boat-physics.js';
 const url=process.env.JEV_ENDPOINT;if(!url)throw Error('Set JEV_ENDPOINT.');
-const client=new Client({url,key:process.env.JEV_API_KEY,protocol:'systemone',timeout:10});
+const client=await liveClient('systemone',10);
 const kart=createArcadeKart(),r=await client.infer(arcadeKartState(kart),kartQuestions);
 console.log(JSON.stringify({case:'arcade-grid',answers:r.answers,ms:r.ms}));
 if(r.answers.throttle.choice!=='ACCELERATE')throw Error('Open starting grid should accelerate.');

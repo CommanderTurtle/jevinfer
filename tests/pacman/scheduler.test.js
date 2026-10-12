@@ -9,7 +9,7 @@ function harness(opts = {}) {
   const events = [];
   const clock = { now: 0 };
   const transport = (body) => new Promise((resolve, reject) => calls.push({ body, resolve, reject }));
-  const scheduler = new Scheduler({ transport, now: () => clock.now, onEvent: (e) => events.push(e), allowFallback: true, ...opts });
+  const scheduler = new Scheduler({ transport, now: () => clock.now, onEvent: (e) => events.push(e), allowFallback: true, maxInFlight:3, splitIndependent:false, ...opts });
   return { calls, events, clock, scheduler };
 }
 const flush = () => new Promise((r) => setTimeout(r, 0));

@@ -48,7 +48,7 @@ export function initGreenLight(client,toast){
   const pending={};flight=pending;
   client.infer(contract.state,contract.questions,current.signal).then(result=>{
    if(run!==current||current.signal.aborted)return;
-   const accepted=applyGreenDecision(world,result.answers,track,sentAt);decisions++;failures=0;nextRequest=weather+.075;
+   const accepted=applyGreenDecision(world,result.answers,track,sentAt);decisions++;failures=0;nextRequest=weather;
    lastReply=`${Math.round(result.ms)} ms${accepted?'':' · expired'}`;
    if(accepted)lastAction=Object.values(result.answers).map(a=>a.choice).filter(Boolean).join(' / ');
    $('#green-inspection').textContent=JSON.stringify({state:contract.state,answers:result.answers,applied:accepted,last_applied_action:lastAction},null,2);

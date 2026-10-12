@@ -3,7 +3,7 @@
 // Ported to static browser ESM; local endpoint integration and strict inference handling.
 import { SCATTER_CORNERS } from "./layout.js";
 import { DIR_VEC, REVERSE } from "./maze.js";
-import { occupiedTile, optionsAt } from "./sim.js";
+import { occupiedTile, optionsAt, SPEED } from "./sim.js";
 import { GHOST_IDS, sameTile } from "./types.js";
 const CORRIDOR_LIMIT = 40;
 const CLYDE_SHY_DISTANCE = 8;
@@ -134,7 +134,7 @@ function corridorFrom(state, start, heading) {
   }
   return tiles;
 }
-const PACMAN_STEPS_PER_SECOND = 7;
+const PACMAN_STEPS_PER_SECOND = SPEED.pacman;
 const frightReach = (state, point) => Math.floor(state.frightLeft * PACMAN_STEPS_PER_SECOND) - point.distance;
 export function fruitRoute(state, point, feats) {
   if (!state.fruit)

@@ -4,7 +4,7 @@
 import { describe, expect, it } from "bun:test";
 import { fruitRoute, goalFor, greedyChoice, isTrap, optionFeatures } from "../../src/pacman/features.js";
 import { FRUIT_TILE, SCATTER_CORNERS } from "../../src/pacman/layout.js";
-import { createGame, escapePoint, nextDecisionPoint } from "../../src/pacman/sim.js";
+import { createGame, escapePoint, nextDecisionPoint, SPEED } from "../../src/pacman/sim.js";
 import { GHOST_IDS } from "../../src/pacman/types.js";
 function setup() {
   const s = createGame();
@@ -223,8 +223,9 @@ describe("fruitRoute", () => {
       feat("right", { fruitDistance: 9, junctionGhost: { id: "pinky", steps: 2 } })
     ];
     expect(fruitRoute(s, at(0), feats)).toBe("down");
-    expect(fruitRoute(s, at(15), feats)).toBeNull();
-    expect(fruitRoute(s, at(14), feats)).toBe("down");
+    const lastReachable = Math.floor(s.fruit.secondsLeft * SPEED.pacman) - 14;
+    expect(fruitRoute(s, at(lastReachable+1), feats)).toBeNull();
+    expect(fruitRoute(s, at(lastReachable), feats)).toBe("down");
   });
   it("avoids a fruit route through a frightened ghost that turns dangerous before Pac-Man gets there", () => {
     const s = setup();

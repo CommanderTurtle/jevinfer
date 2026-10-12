@@ -18,13 +18,13 @@ export function initChat(client,toast) {
       const tags=el('div',{class:'chat-message-tags'});
       if(record.error){tags.append(el('span',{class:'chat-category error'},'REQUEST FAILED'),el('span',{},record.error));}
       else {
-        tags.append(el('span',{class:'chat-category'},record.category),el('span',{},`${(record.probability*100).toFixed(1)}% · ${Math.round(record.result.ms)} ms HTTP`),el('span',{},record.kept?'KEPT':'HELD'));
+        tags.append(el('span',{class:'chat-category'},record.category),el('span',{},`${(record.probability*100).toFixed(1)}% · ${Math.round((record.result.networkMs??record.result.ms))} ms HTTP`),el('span',{},record.kept?'KEPT':'HELD'));
         node.classList.toggle('held',!record.kept);
         const extra=Object.entries(record.result.answers).filter(([id])=>id!=='category').map(([id,a])=>`${id}: ${a.type==='noul'?(a.noul*100).toFixed(1)+'%':a.type==='score'?a.score.toFixed(2):a.choice}`);
         if(extra.length)tags.append(el('span',{},extra.join(' · ')));
       }
       tags.append(el('span',{},`${Math.round(record.bufferWallMs)} ms end-to-end`));node.append(tags);
-      const details=el('details',{class:'chat-inspect'});details.append(el('summary',{},'Inspect judgment'),el('pre',{},JSON.stringify(record.result?{answers:record.result.answers,response:record.result.raw,timing:{queueMs:record.waitMs,httpMs:record.result.ms,outputMs:record.bufferWallMs}}:{error:record.error},null,2)));node.append(details);
+      const details=el('details',{class:'chat-inspect'});details.append(el('summary',{},'Inspect judgment'),el('pre',{},JSON.stringify(record.result?{answers:record.result.answers,response:record.result.raw,timing:{queueMs:record.waitMs,httpMs:record.result.networkMs??record.result.ms,clientQueueMs:record.result.queueMs??0,outputMs:record.bufferWallMs}}:{error:record.error},null,2)));node.append(details);
     }
     return node;
   }
@@ -33,7 +33,7 @@ export function initChat(client,toast) {
   function reclassify(){kept=held=0;for(const r of replay?.records||[])if(r?.delivered&&r.result){r.kept=filterRecord(r,keepLabels(),Number($('#chat-threshold').value)/100);r.kept?kept++:held++;}renderHistory();draw();}
   function shouldShow(record){return record.delivered&&($('#chat-show-held').checked||record.kept||record.error);}
   function release(record){
-    if(record.result){const a=record.result.answers.category;record.category=a.choice;record.probability=a.partial?a.selectedProbability:a.probabilities[a.choice];record.kept=filterRecord(record,keepLabels(),Number($('#chat-threshold').value)/100);record.kept?kept++:held++;totalRtt+=record.result.ms;rttCount++;}
+    if(record.result){const a=record.result.answers.category;record.category=a.choice;record.probability=a.partial?a.selectedProbability:a.probabilities[a.choice];record.kept=filterRecord(record,keepLabels(),Number($('#chat-threshold').value)/100);record.kept?kept++:held++;totalRtt+=record.result.networkMs??record.result.ms;rttCount++;}
     else {latestError=record.error;$('#chat-last-error').textContent=latestError;$('#chat-last-error').hidden=false;}
     totalBuffer+=record.bufferWallMs;releaseCount++;
     if(shouldShow(record))append(filtered,messageNode(record,true));
@@ -76,10 +76,10 @@ export function initChat(client,toast) {
   }
   $('#chat-start').onclick=()=>{
     try {
-      const next=readSetup();if(!Number.isInteger(next.workers)||next.workers<1||next.workers>32)throw Error('Use 1–32 chat workers.');
+      const next=readSetup();if(!Number.isSafeInteger(next.workers)||next.workers<0)throw Error('Use 0 for global capacity, or a positive worker limit.');
       stop();setup=next;kept=held=totalRtt=totalBuffer=rttCount=releaseCount=0;latestError='';$('#chat-last-error').hidden=true;raw.replaceChildren();filtered.replaceChildren();
-      replay=new ChatReplay({messages:setup.messages,times:setup.times,workers:setup.workers,ordered:$('#chat-order').value==='ordered',infer:(message,signal)=>client.infer({stream_context:setup.context,username:message.user,message:message.text},setup.questions,signal),onArrival:record=>append(raw,messageNode(record)),onRelease:release,onChange:run=>{if(run.finished||run.stopped){draw();controls();}}});
-      $('#chat-protocol').textContent='/v1/'+setup.protocol+' · '+setup.workers+' workers';replay.tick();draw();controls();
+      replay=new ChatReplay({messages:setup.messages,times:setup.times,workers:()=>setup.workers?Math.min(setup.workers,client.capacity):client.capacity,ordered:$('#chat-order').value==='ordered',infer:(message,signal)=>client.infer({stream_context:setup.context,username:message.user,message:message.text},setup.questions,signal),onArrival:record=>append(raw,messageNode(record)),onRelease:release,onChange:run=>{if(run.finished||run.stopped){draw();controls();}}});
+      $('#chat-protocol').textContent='/v1/'+setup.protocol+' · '+(setup.workers||'global')+' workers';replay.tick();draw();controls();
     } catch(e){toast(e.message);}
   };
   $('#chat-stop').onclick=stop;

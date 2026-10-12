@@ -20,12 +20,13 @@ export class Scheduler {
   constructor(deps) {
     this.deps = deps;
     this.timeoutMs = deps.timeoutMs ?? 2000;
-    this.maxInFlight = deps.maxInFlight ?? 3;
+    this.maxInFlight = deps.maxInFlight ?? 1;
     this.actors = deps.actors ?? ACTOR_IDS;
     this.slots = deps.slots ?? { inFlight: 0 };
   }
   update(state) {
     if (this.failed) return;
+    this.state = state;
     const now = this.deps.now();
     const live = new Set;
     const fruitOnBoard = state.fruit !== null;
@@ -35,12 +36,12 @@ export class Scheduler {
         const model = this.deps.modelFor?.(id);
         const sent = this.pending.get(point.key);
         if (sent && sent.sentAt !== null && sent.model !== model)
-          this.pending.delete(point.key);
+          this.cancelPending(point.key);
         if (this.ready.has(point.key) && this.ready.get(point.key).model !== model)
           this.dropReady(point.key);
         if (id === "pacman") {
           if (this.pending.get(point.key)?.fruitOnBoard === !fruitOnBoard)
-            this.pending.delete(point.key);
+            this.cancelPending(point.key);
           if (this.ready.get(point.key)?.fruitOnBoard === !fruitOnBoard)
             this.dropReady(point.key);
         }
@@ -58,7 +59,7 @@ export class Scheduler {
     }
     for (const key of [...this.pending.keys()])
       if (!live.has(key))
-        this.pending.delete(key);
+        this.cancelPending(key);
     for (const key of [...this.ready.keys()])
       if (!live.has(key))
         this.dropReady(key);
@@ -80,9 +81,11 @@ export class Scheduler {
       byModel.set(model, [...byModel.get(model) ?? [], p]);
     }
     for (const [model, batch] of byModel) {
-      if (this.slots.inFlight >= this.maxInFlight)
-        break;
-      this.send(state, batch, now, model);
+      const limit = typeof this.maxInFlight === "function" ? this.maxInFlight() : this.maxInFlight;
+      const available = Math.max(0, limit - this.slots.inFlight);
+      if (!available) break;
+      const size = this.deps.splitIndependent===false?batch.length:Math.ceil(batch.length / available);
+      for (let i=0;i<batch.length;i+=size) this.send(state,batch.slice(i,i+size),now,model);
     }
   }
   decide(point, state) {
@@ -110,8 +113,9 @@ export class Scheduler {
   }
   reset() {
     this.failed = false;
+    this.state = null;
     this.lastDecision = null;
-    this.pending.clear();
+    for (const key of this.pending.keys()) this.cancelPending(key);
     this.ready.clear();
     this.consumed.clear();
   }
@@ -120,14 +124,25 @@ export class Scheduler {
     this.failed = true;
     this.deps.onEvent({ type: "error", message });
   }
+  cancelPending(key) {
+    const p=this.pending.get(key); this.pending.delete(key);
+    if(p?.flight && ![...this.pending.values()].some(other=>other.flight===p.flight))p.flight.abort();
+  }
   send(state, batch, now, requested) {
+    const flight=new AbortController();
     for (const p of batch) {
+      // Queueing may outlive the snapshot which created this junction request.
+      const point=decisionPoints(state,p.q.point.actor).find(point=>point.key===p.q.point.key)??p.q.point;
+      p.q={point,features:optionFeatures(state,point)};
+      p.fruitOnBoard=state.fruit!==null;
+      p.fruitRoute=point.actor==='pacman'?fruitRoute(state,point,p.q.features):null;
+      p.flight = flight;
       p.sentAt = now;
       p.model = requested;
     }
     this.slots.inFlight += 1;
     const isCurrent = (p) => this.pending.get(p.q.point.key) === p;
-    this.deps.transport({ ...requested ? { model: requested } : {}, ...buildRequest(state, batch.map((p) => p.q)), keys: Object.fromEntries(batch.map((p) => [questionName(p.q.point), p.q.point.key])) }).then((res) => {
+    this.deps.transport({ ...requested ? { model: requested } : {}, ...buildRequest(state, batch.map((p) => p.q)), keys: Object.fromEntries(batch.map((p) => [questionName(p.q.point), p.q.point.key])) }, flight.signal).then((res) => {
       const model = res.model ?? requested;
       this.deps.onEvent({
         type: "call",
@@ -161,6 +176,7 @@ export class Scheduler {
       if (batch.some(isCurrent)) this.fail(err instanceof Error ? err.message : String(err));
     }).finally(() => {
       this.slots.inFlight -= 1;
+      if (!this.failed && this.state) this.update(this.state);
     });
   }
   dropReady(key) {

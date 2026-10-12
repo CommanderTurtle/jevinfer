@@ -47,14 +47,14 @@ export class PacmanSession {
       now: () => performance.now(),
       actors: jevActors,
       slots: this.slots,
-      maxInFlight: Math.max(1, Math.min(3, Number(this.client.config.concurrency) || 1)),
+      maxInFlight: () => this.client.capacity ?? Math.max(1, Number(this.client.config.concurrency) || 1),
       timeoutMs: (Number(this.client.config.timeout) || 30) * 1000,
       allowFallback: false,
       onEvent: emit,
-      transport: async body => {
+      transport: async (body, signal) => {
         run.signal.throwIfAborted();
         emit({type:'request', body:{state:body.state, questions:body.questions}});
-        const result = await this.client.infer(body.state, body.questions, run.signal);
+        const result = await this.client.infer(body.state, body.questions, signal?AbortSignal.any([run.signal,signal]):run.signal, {priority:Object.keys(body.questions).some(k=>k.includes('escape'))?3:2});
         run.signal.throwIfAborted();
         emit({type:'response', body:result.raw});
         return {answers:result.answers, latencyMs:result.ms, usage:null, costUsd:null, traceId:null};

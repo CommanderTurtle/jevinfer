@@ -1,8 +1,9 @@
 // Opt-in, closed-loop synthetic driving. Reports behavior, not guaranteed policy quality.
-import {Client} from '../src/core.js';
+import {liveClient} from './live-client.js';
 import {createWorld,stepWorld,drivingState,drivingQuestions} from '../src/race-physics.js';
 import {createCourse,stepCourse,courseState} from '../src/race-course.js';
 import {createBoat,stepBoat,boatState,boatContract,decodeBoat} from '../src/boat-physics.js';
+import {createArcadeKart,stepArcadeKart,arcadeKartState,kartQuestions} from '../src/arcade-kart.js';
 import {inferDriving} from '../src/driving-policy.js';
 import {createCombatPilot} from '../src/combat-policy.js';
 const url=process.env.JEV_ENDPOINT;
@@ -11,19 +12,20 @@ const steps=Number(process.env.JEV_DRIVE_STEPS||60);
 if(!Number.isInteger(steps)||steps<1||steps>1000)throw Error('JEV_DRIVE_STEPS must be 1–1000.');
 const fixed=process.env.JEV_DRIVE_FIXED_STEP==='1',seconds=Number(process.env.JEV_DRIVE_SECONDS||60);
 if(!Number.isFinite(seconds)||seconds<=0||seconds>600)throw Error('JEV_DRIVE_SECONDS must be >0 and <=600.');
-const client=new Client({url,key:process.env.JEV_API_KEY,protocol:process.env.JEV_PROTOCOL||'systemone',timeout:15});
+const client=await liveClient(process.env.JEV_PROTOCOL||'systemone',15);
 const all=['low','medium','high','parking','slalom','kart','city','pirate'];
 const selected=process.env.JEV_DRIVE_CASES?.split(',')||all;
 if(selected.some(x=>!all.includes(x)))throw Error('Unknown driving case.');
 for(const scenario of selected){
- const boat=scenario==='pirate',road=['low','medium','high'].includes(scenario),w=boat?createBoat():road?createWorld('traffic',160,scenario):createCourse(scenario,'medium',160),latencies=[];
+ const boat=scenario==='pirate',kart=scenario==='kart',road=['low','medium','high'].includes(scenario),w=boat?createBoat():kart?createArcadeKart():road?createWorld('traffic',160,scenario):createCourse(scenario,'medium',160),latencies=[];
  if(boat)w.time=5;
- let command=boat?{sail:0}:road?{lane:1,throttle:'COAST'}:{throttle:0,brake:0,steer:0};
+ let command=boat?{sail:0}:road||kart?{lane:1,throttle:'COAST'}:{throttle:0,brake:0,steer:0};
  const controller=new AbortController();let weapon=null;
  const combat=createCombatPilot(client,()=>w,controller.signal,a=>{weapon=a;},e=>console.error(JSON.stringify({scenario,weapon_error:e.message})));
  const started=performance.now();let last=started;
  function advance(dt){
-  if(boat)stepBoat(w,dt,command);
+  if(boat){stepBoat(w,dt,{...command,panic:!!weapon?.panic});weapon=null;}
+  else if(kart){stepArcadeKart(w,dt,command.lane,command.throttle,weapon||{});weapon=null;}
   else if(road)while(dt>0){const d=Math.min(dt,1/120);stepWorld(w,d,command.lane,command.throttle);dt-=d;}
   else{stepCourse(w,dt,{...command,item:!!weapon?.item,itemTarget:weapon?.target});weapon=null;}
  }
@@ -32,10 +34,10 @@ for(const scenario of selected){
  const timer=fixed?null:setInterval(()=>{const now=performance.now();advance((now-last)/1000);last=now;combat.tick();},8);
  try{
   for(let i=0;i<steps&&!w.finished&&(fixed||performance.now()-started<seconds*1000);i++){
-   const state=boat?boatState(w):road?drivingState(w):courseState(w);state.steering_control=boat?'rudder':road?'lane_change':'direct_wheel';
+   const state=boat?boatState(w):kart?arcadeKartState(w):road?drivingState(w):courseState(w);state.steering_control=boat?'rudder':road||kart?'lane_change':'direct_wheel';
    const helm=boat?boatContract(w):null;
-   const r=!boat&&!road?await inferDriving(client,w,controller.signal):await client.infer(helm?.state||state,helm?.questions||drivingQuestions,controller.signal);latencies.push(r.ms);
-   command=!boat&&!road?r.command:boat?decodeBoat(r.answers):{lane:['LEFT','CENTER','RIGHT'].indexOf(r.answers.lane.choice),throttle:r.answers.throttle.choice};
+   const r=!boat&&!road&&!kart?await inferDriving(client,w,controller.signal):await client.infer(helm?.state||state,helm?.questions||(kart?kartQuestions:drivingQuestions),controller.signal);latencies.push(r.ms);
+   command=!boat&&!road&&!kart?r.command:boat?decodeBoat(r.answers):{lane:['LEFT','CENTER','RIGHT'].indexOf(r.answers.lane.choice),throttle:r.answers.throttle.choice};
    combat.tick();
    w.reactionSeconds=fixed?.2:r.ms/1000;
    if(fixed)advance(.2);

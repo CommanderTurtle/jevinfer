@@ -26,8 +26,8 @@ for(const mode of ['pacman','ghosts','both'])test(`${mode} asks only selected ac
   const calls=[];
   const game=new PacmanSession({config,async infer(state,questions){validQuestions(questions);calls.push(questions);return response(questions);}});
   game.reset(mode);game.start();game.tick(1/60);await flush();
-  expect(Object.keys(calls[0]).sort()).toEqual(mode==='both'?['blinky','pacman']:mode==='pacman'?['pacman']:['blinky']);
-  expect(game.stats.calls).toBe(1);expect(game.stats.decisions).toBe(Object.keys(calls[0]).length);
+  expect(calls.flatMap(q=>Object.keys(q)).sort()).toEqual(mode==='both'?['blinky','pacman']:mode==='pacman'?['pacman']:['blinky']);
+  expect(game.stats.calls).toBe(calls.length);expect(game.stats.decisions).toBe(calls.flatMap(q=>Object.keys(q)).length);
   game.stop();
 });
 

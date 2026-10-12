@@ -28,10 +28,10 @@ export function createCombatPilot(client,world,signal,fire,onError=()=>{}){
  let pending=false,nextAt=0;
  return {tick(){
   if(pending||signal.aborted||performance.now()<nextAt)return;
-  nextAt=performance.now()+300;
+  nextAt=performance.now();
   const w=world(),contract=combatContract(w);if(!contract)return;
   pending=true;
-  client.infer(contract.state,contract.questions,signal).then(r=>{
+  client.infer(contract.state,contract.questions,signal,{priority:w.course==='pirate'?3:2}).then(r=>{
    if(signal.aborted||world()!==w||!contract.valid(w))return;
    const action=contract.decode(r.answers);
    const target=action.target?w.objects.find(o=>o.id===action.target):null;
