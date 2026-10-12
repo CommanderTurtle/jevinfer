@@ -2,6 +2,7 @@ import {clamp} from './core.js';
 
 export const steeringValues={HARD_LEFT:-1,LEFT:-.55,SLIGHT_LEFT:-.2,TRIM_LEFT:-.07,STRAIGHT:0,TRIM_RIGHT:.07,SLIGHT_RIGHT:.2,RIGHT:.55,HARD_RIGHT:1};
 const pedalValues={OFF:0,FEATHER:.12,LIGHT:.3,MEDIUM:.6,FULL:1};
+const steeringGain=w=>w.course==='slalom'?2:1;
 const choose=(instructions,criteria)=>({type:'choice',instructions,criteria});
 const yes=(instructions)=>({type:'noul',instructions});
 const wheel=Object.fromEntries(Object.entries(steeringValues).map(([label,value])=>[label,value===0?'Front wheels straight.':`Turn the front wheels ${value<0?'left':'right'}: ${Math.abs(value)<.1?'tiny trim':Math.abs(value)<.3?'slight':Math.abs(value)<.8?'moderate':'full lock'}.`]));
@@ -61,7 +62,7 @@ export function vehicleStep(w,dt,command){
  const movingSign=Math.sign(w.speed)||direction;
  w.speed=movingSign*Math.max(0,Math.abs(w.speed)+(propulsion*direction*movingSign-drag-braking)*dt);
  w.speed=clamp(w.speed,-7,boost?54:kart?44:52); // mechanical drivetrain limits, never a user success setting
- const v=(oldSpeed+w.speed)/2,wheel=w.steer*.62,desiredYaw=v/(kart?1.7:2.5)*Math.tan(wheel),gripYaw=(kart?16:10)/Math.max(1,Math.abs(v));
+ const v=(oldSpeed+w.speed)/2,wheel=w.steer*.62,gain=steeringGain(w),desiredYaw=gain*v/(kart?1.7:2.5)*Math.tan(wheel),gripYaw=gain*(kart?16:10)/Math.max(1,Math.abs(v));
  // Bicycle yaw with finite tyre grip. Rear lock adds oversteer instead of instant rotation.
  const targetYaw=clamp(desiredYaw,-gripYaw,gripYaw)*(hb?1.3:1);
  w.yaw=(w.yaw||0)+(targetYaw-(w.yaw||0))*Math.min(1,dt*(hb?5:12));
@@ -73,8 +74,8 @@ export function vehicleStep(w,dt,command){
 }
 const round=x=>Math.round(x*10)/10;
 export function wheelEffects(w){
- const period=clamp(w.reactionSeconds||.4,.1,2),kart=w.course==='kart',grip=(kart?16:10)/Math.max(1,Math.abs(w.speed));
- return {period_seconds:round(period),assumption:'Current speed, normal grip, steady steering; not a recommended action.',heading_change_deg:Object.fromEntries(Object.entries(steeringValues).map(([key,value])=>[key,round(clamp(w.speed/(kart?1.7:2.5)*Math.tan(value*.62),-grip,grip)*period*180/Math.PI)]))};
+ const period=clamp(w.reactionSeconds||.4,.1,2),kart=w.course==='kart',gain=steeringGain(w),grip=gain*(kart?16:10)/Math.max(1,Math.abs(w.speed));
+ return {period_seconds:round(period),assumption:'Current speed, normal grip, steady steering; not a recommended action.',heading_change_deg:Object.fromEntries(Object.entries(steeringValues).map(([key,value])=>[key,round(clamp(gain*w.speed/(kart?1.7:2.5)*Math.tan(value*.62),-grip,grip)*period*180/Math.PI)]))};
 }
 export function vehicleState(w){return {speed_kmh:round(w.speed*3.6),wheel:round(w.steer||0),yaw_deg_s:round((w.yaw||0)*180/Math.PI),gear:w.controls?.gear||'DRIVE',throttle:w.controls?.throttle||0,brake:w.controls?.brake||0,handbrake:!!w.controls?.handbrakeActive,stopping_distance_m:round(w.speed*w.speed/22+Math.abs(w.speed)*(w.reactionSeconds||.4)),dimensions_m:[1.8,w.course==='kart'?2.6:4.2],wheelbase_m:w.course==='kart'?1.7:2.5,wheel_effects:wheelEffects(w)};}
 // Compact, labelled 360-degree observations, including every nearby cone and side car.
@@ -94,7 +95,7 @@ export function manoeuvrePreview(w,objects,edge){
  const out=[];
  for(const gear of [-1,1])for(const steer of [-.7,0,.7]){
   let x=w.x,z=w.z,h=w.heading||0,clear=0;
-  for(let i=0;i<12;i++){h+=gear*.5/2.5*Math.tan(steer*.62);x+=Math.sin(h)*gear*.5;z-=Math.cos(h)*gear*.5;
+  for(let i=0;i<12;i++){h+=steeringGain(w)*gear*.5/2.5*Math.tan(steer*.62);x+=Math.sin(h)*gear*.5;z-=Math.cos(h)*gear*.5;
    if(edge?.({x,z})||objects.some(o=>Math.hypot(x-o.x,z-o.z)<(o.kind==='cone'?1.45:Math.max(o.width||1.8,o.length||4.2)/2+1)))break;clear+=.5;
   }
   out.push([gear<0?'reverse':'drive',steer,clear,round(x-w.x),round(z-w.z)]);
