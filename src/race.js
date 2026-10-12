@@ -17,6 +17,7 @@ export function initRace(client,toast){
  let roadView='chase';
  let view=null,world,mode='parked',run=null,visible=false,raf=0,last=0,target=1,throttle='COAST',command={steer:0,pedal:'COAST'},decisions=0,lastDecision=0,lastHud=0,peak=0;
  const manual=initManualControls($('#race-manual'),keys,()=>mode==='manual');
+ $('#race-police-lights').checked=!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
  let combat=null,weapon=null;
  const isFree=()=>freeCourses.has(world.course)&&!world.arcade;
  const isBoat=()=>world.course==='pirate';
@@ -34,7 +35,7 @@ export function initRace(client,toast){
   canvas.setAttribute('aria-label',rendererKind(course)==='arcade'?'Arcade driving simulator':'3D driving simulator');
   target=1;throttle='COAST';command={steer:0,pedal:'COAST'};decisions=0;peak=0;
   $('#race-log').replaceChildren();$('#race-command').textContent='Ready';$('#race-latency').textContent='—';view?.setWorld(world);if(switchRenderer&&visible)init3D();
-  $('#race-assist').parentElement.hidden=!isFree();$('#race-camera').parentElement.hidden=rendererKind(course)==='arcade';hud();
+  $('#race-assist').parentElement.hidden=!isFree();$('#race-camera').parentElement.hidden=rendererKind(course)==='arcade';$('#race-police-lights').parentElement.hidden=!isBoat();hud();
  }
  function hud(){
   $('#race-mode').textContent=world.finished?(world.endReason||(world.failed?'FAILED':'FINISH')):isBoat()&&world.time>0&&world.time<5?'EMBARKING':mode==='parked'?(world.time?'PAUSED':'READY'):mode.toUpperCase();$('#race-speed').textContent=Math.round(world.speed*3.6);$('#race-distance').textContent=Math.round(world.distance);
@@ -91,7 +92,7 @@ export function initRace(client,toast){
    if(mode==='jev')combat?.tick();
   }
   if(now-lastHud>100){hud();lastHud=now;}
-  view?.render(world,{realistic:false,view:rendererKind(world.course)==='arcade'?'chase':$('#race-camera').value});raf=requestAnimationFrame(tick);
+  view?.render(world,{realistic:false,view:rendererKind(world.course)==='arcade'?'chase':$('#race-camera').value,policeLights:$('#race-police-lights').checked});raf=requestAnimationFrame(tick);
  }
  $('#race-start').onclick=start;$('#race-stop').onclick=stop;$('#race-reset').onclick=()=>{stop();reset();};
  for(const id of ['#race-course','#race-density'])$(id).onchange=()=>{stop();reset();};

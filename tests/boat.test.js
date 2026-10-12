@@ -1,7 +1,8 @@
 import {test,expect} from 'bun:test';
 import {createBoat,stepBoat,boatState,fireBroadside,seaHeight,seaWaves,waterHeight,boatQuestions,boatContract,decodeBoat} from '../src/boat-physics.js';
 import {validQuestions} from '../src/core.js';
-import {panicAvailable,panicContract,firePanic,boardingSeconds,panicCooldownSeconds} from '../src/boat-physics.js';
+import {panicAvailable,panicContract,firePanic,boardingSeconds,panicCooldownSeconds,hullStrength,cannonDamage} from '../src/boat-physics.js';
+import {policeBeaconLit} from '../src/boat-scene.js';
 const advance=(w,seconds,command={pedal:'FULL',steer:0})=>{for(let t=0;t<seconds;t+=1/60)stepBoat(w,1/60,command);};
 test('Last stand exists only in the final boarding second and revalidates before firing',()=>{
  const w=createBoat();w.time=6;w.waves=[];const p={id:0,x:8,z:0,heading:0,speed:8,hull:3,boarding:1};w.police=[p];w.speed=8;
@@ -68,6 +69,27 @@ test('Water stays finite; disabled pursuers and finite effects are bounded',()=>
 test('Repeated contact jitter cannot drain the hull every frame; steep patches share the wave field',()=>{
  const w=createBoat();w.time=5;w.waves=[];w.police=[{id:0,x:2,z:1,heading:0,speed:0,hull:3}];
  for(let i=0;i<15;i++){w.police[0].x=w.x+2;w.police[0].z=w.z+1;w.contacts.clear();stepBoat(w,.1,{pedal:'COAST'});}
- expect(w.hits).toBe(1);expect(w.hull).toBe(88);
+ expect(w.hits).toBe(1);expect(w.hull).toBeCloseTo(100-12/hullStrength,8);
  w.waves=[{x:3,z:-70,radius:12}];expect(waterHeight(w,3,-70)).toBeCloseTo(seaHeight(3,-70,w.time)*4,10);
+});
+
+test('Even simultaneous high-speed rams cannot sink a nearly depleted hull; boarding still can',()=>{
+ const w=createBoat('high');w.time=6;w.hull=.5;w.waves=[];
+ w.police=w.police.map((p,i)=>({...p,x:i%2?2:-2,z:1,speed:29,heading:Math.PI}));
+ stepBoat(w,.02);expect(w.hits).toBeGreaterThan(0);expect(w.hull).toBe(1);expect(w.finished).toBe(false);
+ w.police=[{id:0,x:w.x+8,z:w.z,heading:w.heading,speed:0,hull:3,boarding:boardingSeconds-.001}];
+ stepBoat(w,.01);expect(w.finished).toBe(true);expect(w.endReason).toBe('BOARDED');
+});
+
+test('Cannon hits are slightly stronger and the model sees the actual remaining hit count',()=>{
+ const w=createBoat();w.time=6;w.waves=[];w.police=[{id:0,x:25,z:0,heading:0,speed:0,hull:3,boarding:1}];
+ w.balls=[{x:24,z:0,y:2,vx:65,vz:0,vy:0,age:0}];
+ stepBoat(w,1/120);expect(w.police[0].hull).toBeCloseTo(3-cannonDamage,8);expect(w.police[0].boarding).toBe(0);
+ expect(boatState(w).boats[0].hits_remaining).toBe(2);expect(cannonDamage).toBe(1.2);expect(hullStrength).toBe(1.3);
+});
+
+test('Police red-blue flashers alternate and can be fully disabled',()=>{
+ expect(policeBeaconLit(0,0,0)).toBe(true);expect(policeBeaconLit(0,0,1)).toBe(false);
+ expect(policeBeaconLit(.25,0,0)).toBe(false);expect(policeBeaconLit(.25,0,1)).toBe(true);
+ for(const t of [0,.25,.5,12])for(const bank of [0,1])expect(policeBeaconLit(t,0,bank,false)).toBe(false);
 });
