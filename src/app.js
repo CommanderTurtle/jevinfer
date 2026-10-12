@@ -4,15 +4,16 @@ import {initPaint} from './paint.js';
 import {initVortex} from './vortex.js';
 import {initChat} from './chat.js';
 import {initGreenLight} from './green-light.js';
+import {initPacman} from './pacman.js';
 
 const defaults={url:'http://alien.local:8000',protocol:'systemone',concurrency:2,timeout:30,model:'',key:''};
 let saved={};try{saved=JSON.parse(localStorage.getItem('jev-infer.config')||'{}');}catch{}
 const config={...defaults,...saved,key:''};let toastTimer,playRun=null,lastResult=null,total=0,totalMs=0;
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,8000);}
 const client=new Client(config,result=>{total++;totalMs+=result.ms;$('#session-metrics').textContent=`${total.toLocaleString()} requests · ${(totalMs/total).toFixed(0)} ms mean round trip`;$('#connection-dot').classList.add('ready');$('#connection-label').textContent=new URL(config.url).host;});
-const race=initRace(client,toast),paint=initPaint(client,toast),vortex=initVortex(client,toast),chat=initChat(client,toast),green=initGreenLight(client,toast);
-function stopAll(){playRun?.stop();race.stop();paint.stop();vortex.stop();chat.stop();green.stop();}
-function tab(id){if(!['playground','drive','paint','tornado','chat','green-light'].includes(id))id='playground';for(const p of document.querySelectorAll('.pane'))p.classList.toggle('active',p.id===id);for(const b of document.querySelectorAll('.tab')){const active=b.dataset.tab===id;b.classList.toggle('active',active);b.setAttribute('aria-current',active?'page':'false');}race.setVisible(id==='drive');paint.setVisible(id==='paint');vortex.setVisible(id==='tornado');chat.setVisible(id==='chat');green.setVisible(id==='green-light');if(id!=='playground')playRun?.stop();history.replaceState(null,'','#'+id);}
+const race=initRace(client,toast),paint=initPaint(client,toast),vortex=initVortex(client,toast),chat=initChat(client,toast),green=initGreenLight(client,toast),pacman=initPacman(client,toast);
+function stopAll(){playRun?.stop();race.stop();paint.stop();vortex.stop();chat.stop();green.stop();pacman.stop();}
+function tab(id){if(!['playground','drive','paint','tornado','chat','green-light','pacman'].includes(id))id='playground';for(const p of document.querySelectorAll('.pane'))p.classList.toggle('active',p.id===id);for(const b of document.querySelectorAll('.tab')){const active=b.dataset.tab===id;b.classList.toggle('active',active);b.setAttribute('aria-current',active?'page':'false');}race.setVisible(id==='drive');paint.setVisible(id==='paint');vortex.setVisible(id==='tornado');chat.setVisible(id==='chat');green.setVisible(id==='green-light');pacman.setVisible(id==='pacman');if(id!=='playground')playRun?.stop();history.replaceState(null,'','#'+id);}
 for(const b of document.querySelectorAll('.tab'))b.onclick=()=>{tab(b.dataset.tab);window.scrollTo(0,0);};$('.brand').onclick=e=>{e.preventDefault();tab('playground');window.scrollTo(0,0);};
 window.addEventListener('hashchange',()=>tab(location.hash.slice(1)));window.addEventListener('pagehide',stopAll);document.addEventListener('visibilitychange',()=>{if(document.hidden)race.stop();});
 

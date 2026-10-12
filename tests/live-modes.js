@@ -10,10 +10,16 @@ import {drivingContract} from '../src/driving-policy.js';
 import {createArcadeKart,arcadeKartState,kartQuestions} from '../src/arcade-kart.js';
 import {createBoat,boatContract} from '../src/boat-physics.js';
 import {presets,makeQuestions} from '../src/chat-engine.js';
+import {createGame,decisionPoints,jevActors} from '../src/pacman/sim.js';
+import {optionFeatures} from '../src/pacman/features.js';
+import {buildRequest as pacmanRequest} from '../src/pacman/brain.js';
+const pacman=createGame({pacmanControl:'jev',ghostsByAI:true});
+const pacmanSetup=pacmanRequest(pacman,jevActors(pacman).flatMap(id=>decisionPoints(pacman,id)).map(point=>({point,features:optionFeatures(pacman,point)})));
 const layout=canvasLayout('classic'),pixels=[...canvasBatches(layout,'Head / Base / Front')][0];
 const palette={SKIN:'#dca477',HAIR:'#4a3027',WHITE:'#f1eadc',BLACK:'#222334'};
 const cases=[
  ['playground',{message:'My new laptop arrived broken. I need a replacement today.'},{route:choice('Route the ticket.',['RETURNS','SHIPPING','GENERAL']),urgent:{type:'noul',instructions:'Is this time-sensitive?'},severity:{type:'score',instructions:'How serious is the issue?',criteria:['Low','Medium','High']}}],
+ ['pacman',pacmanSetup.state,pacmanSetup.questions],
  ['drive',drivingState({x:1,speed:20,cars:[{lane:1,z:30,speed:10}]}),drivingQuestions],
  ...['parking','slalom','city'].map(mode=>{const c=drivingContract(createCourse(mode));return ['drive-'+mode,c.state,c.questions];}),
  ['drive-kart',arcadeKartState(createArcadeKart()),kartQuestions],

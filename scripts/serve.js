@@ -8,7 +8,7 @@ const server = Bun.serve({
     let path;
     try { path = decodeURIComponent(new URL(req.url).pathname); } catch { return new Response('Bad path', {status: 400}); }
     if (path === '/') path = '/index.html';
-    if (!/^\/(index\.html|(?:styles|green-light)\.css|vendor\/three\.js|src\/(?:pigment\/)?[a-z-]+\.(?:m?js)|assets\/green-light\/[a-z0-9-]+\.wav)$/.test(path)) return new Response('Not found', {status: 404});
+    if (!/^\/(index\.html|(?:styles|green-light)\.css|vendor\/three\.js|src\/(?:(?:pigment|pacman)\/)?[a-z-]+\.(?:m?js)|assets\/green-light\/[a-z0-9-]+\.wav)$/.test(path)) return new Response('Not found', {status: 404});
     const full = resolve(root, '.' + path);
     if (!full.startsWith(root + sep)) return new Response('Forbidden', {status: 403});
     const file = Bun.file(full);

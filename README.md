@@ -23,6 +23,8 @@ Ordinary HTML, CSS and ES modules; no build required. Serve the directory with a
 - **Tornado:** pink filament funnel, orbiting request/result cards, activity bars, evidence matrix and result ticker around streamed CSV/TSV/JSONL/JSON classification. Every row gets its own request. Cards and metrics reflect actual dispatches and answers. Portrait, immersive and motion-pause controls affect presentation independently. No wallets, trading or profit simulation.
 - **Chat:** independent timed arrivals beside a filtered result feed. Visible category toggles update existing results immediately. Edit classification instructions, categories, confidence threshold and extra Noul/Score questions. As-ready delivery avoids head-of-line blocking; arrival-order delivery remains optional. Follow-scroll continues beyond the 120-row display window. Source pacing, bursts and HTTP concurrency are independent; backlog is shown without dropping messages.
 
+- **Pac-Man:** [Jevman](https://github.com/opper-ai/jevman-benchmark/tree/b202e2cefd3dcf62b99835b319450b687960f40a)'s maze, ghost personalities, fruit, lives and levels, rendered locally in Canvas 2D. Jev can play Pac-Man, the ghosts or both; manual play supports WASD/arrows and touch. Junction look-ahead and mid-corridor escape questions share bounded requests. Stale decisions are discarded; inference errors pause play without substituting scripted Jev controls. Decision arrows show actual returned distributions. No upstream server, account or leaderboard is required.
+
 SystemOne exposes full distributions. Decision returns selected scores, which are labeled accordingly. Neither endpoint's answers are cached by this app.
 
 ## Data
@@ -46,6 +48,8 @@ bun test
 ```
 
 Tests cover protocol validation, streaming parsing, bounded scheduling/cancellation, chat timing and filters, ordered/as-ready delivery, skin UV regions, paint distributions/rendering and swept driving collisions.
+
+`bun test tests/pacman` covers the ported Jevman simulation, maze, route features, prompts and scheduler, plus strict local transport/cancellation. Sources derive from **opper-ai/jevman-benchmark @ b202e2cefd3dcf62b99835b319450b687960f40a**, Copyright 2026 Johnny Chadda, AGPL-3.0-or-later; adapted to static ESM with local NInfer transport.
 
 Set `JEV_ENDPOINT` to your NInfer origin, then `bun run test:live` checks every experiment and driving-mode contract through both endpoints, plus every paint representation. Optional `JEV_API_KEY` is read from the environment. These checks send only synthetic fixtures.
 

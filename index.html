@@ -2,7 +2,7 @@
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="referrer" content="no-referrer"><meta name="description" content="A local-first playground for finite decisions, autonomous racing, pixel painting, data inference and live chat replay."><title>jev infer</title><link rel="stylesheet" href="./styles.css"><link rel="stylesheet" href="./green-light.css"></head>
 <body>
-<header class="topbar"><a class="brand" href="#playground"><span class="brand-mark">j</span>jev <span>infer</span></a><nav aria-label="Experiments"><button class="tab active" data-tab="playground"><small>01</small> Playground</button><button class="tab" data-tab="drive"><small>02</small> Drive</button><button class="tab" data-tab="paint"><small>03</small> Paint</button><button class="tab" data-tab="tornado"><small>04</small> Tornado</button><button class="tab" data-tab="chat"><small>05</small> Chat</button><button class="tab" data-tab="green-light"><small>06</small> Green Light</button></nav><button id="settings-open" class="connection"><i id="connection-dot"></i><span id="connection-label">Connect endpoint</span><span>↗</span></button></header>
+<header class="topbar"><a class="brand" href="#playground"><span class="brand-mark">j</span>jev <span>infer</span></a><nav aria-label="Experiments"><button class="tab active" data-tab="playground"><small>01</small> Playground</button><button class="tab" data-tab="drive"><small>02</small> Drive</button><button class="tab" data-tab="paint"><small>03</small> Paint</button><button class="tab" data-tab="tornado"><small>04</small> Tornado</button><button class="tab" data-tab="chat"><small>05</small> Chat</button><button class="tab" data-tab="green-light"><small>06</small> Green Light</button><button class="tab" data-tab="pacman"><small>07</small> Pac-Man</button></nav><button id="settings-open" class="connection"><i id="connection-dot"></i><span id="connection-label">Connect endpoint</span><span>↗</span></button></header>
 <main>
 <section id="playground" class="pane active">
   <div class="page-title"><h1>Playground</h1></div>
@@ -21,6 +21,21 @@
 <label class="drive-check"><input type="checkbox" id="race-assist">Recovery assist</label>
 <label class="drive-check" hidden><input type="checkbox" id="race-police-lights" checked>Police flashers</label>
 <div class="stat-line"><span>Time</span><strong id="race-clock">0 s</strong></div><div class="stat-line"><span>Progress</span><strong id="race-position">0 passed</strong></div><div class="stat-line"><span>Telemetry</span><strong id="race-detail">—</strong></div><div class="stat-line"><span>Collisions</span><strong id="race-hits">0</strong></div><div class="stat-line"><span>Decisions</span><strong id="race-decisions">0</strong></div><div id="race-log" class="event-log" aria-live="polite"></div><details id="race-sensor-panel"><summary>Model state</summary><pre id="race-sensors"></pre></details></aside></div>
+</section>
+<section id="pacman" class="pane">
+  <div class="compact-title"><h1>Pac-Man</h1><a class="micro" href="https://github.com/opper-ai/jevman-benchmark/tree/b202e2cefd3dcf62b99835b319450b687960f40a" target="_blank" rel="noopener noreferrer">Jevman ↗</a></div>
+  <div class="pacman-grid"><div class="pacman-stage"><div class="pacman-hud"><span>SCORE <b id="pacman-score">0</b></span><span>LIVES <b id="pacman-lives">3</b></span><span>LEVEL <b id="pacman-level">1</b></span></div><canvas id="pacman-canvas" width="560" height="620" tabindex="0" aria-label="Pac-Man maze. Arrow keys or WASD to steer in human mode. Space pauses, R restarts."></canvas><output id="pacman-status" aria-live="polite">READY</output></div>
+  <aside class="card lab-controls"><h2>Control</h2>
+    <label>Players<select id="pacman-mode"><option value="pacman">Jev Pac-Man · classic ghosts</option><option value="classic">Human Pac-Man · classic ghosts</option><option value="ghosts">Human Pac-Man · Jev ghosts</option><option value="both">Jev · both sides</option></select></label>
+    <label>Simulation speed<select id="pacman-speed"><option value=".5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+    <div class="button-row"><button id="pacman-start" class="primary">Start</button><button id="pacman-pause" disabled>Pause</button><button id="pacman-reset">Reset</button></div>
+    <div class="button-row"><button id="pacman-sound" aria-pressed="true">Sound on</button><label class="drive-check"><input id="pacman-odds" type="checkbox" checked>Decision arrows</label></div>
+    <div id="pacman-pad" class="pacman-pad" hidden aria-label="Pac-Man controls"><button data-pacman-dir="up" aria-label="Up">↑<kbd>W</kbd></button><button data-pacman-dir="left" aria-label="Left">←<kbd>A</kbd></button><button data-pacman-dir="down" aria-label="Down">↓<kbd>S</kbd></button><button data-pacman-dir="right" aria-label="Right">→<kbd>D</kbd></button></div>
+    <p class="micro">WASD / arrows · swipe · Space pause · R restart</p>
+    <div class="stat-line"><span>Pellets</span><strong id="pacman-pellets">244</strong></div><div class="stat-line"><span>Requests</span><strong id="pacman-calls">0</strong></div><div class="stat-line"><span>In flight</span><strong id="pacman-pending">0</strong></div><div class="stat-line"><span>Round trip</span><strong id="pacman-latency">—</strong></div>
+    <div id="pacman-decisions" aria-label="Latest decisions"></div>
+    <details id="pacman-inspect"><summary>State &amp; inference</summary><pre id="pacman-state">{}</pre></details>
+  </aside></div>
 </section>
 <section id="green-light" class="pane">
   <div class="green-heading"><h1>Green Light</h1><div class="button-row"><button id="green-sound" aria-pressed="false">Enable sound</button><button id="green-pause">Pause</button><button id="green-restart">Restart</button><button id="green-fullscreen" title="Fullscreen">⛶</button></div></div>
